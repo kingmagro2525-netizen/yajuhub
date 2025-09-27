@@ -1,17 +1,25 @@
--- Gg Hub : Full restored + Music added (50 tracks)
--- Tabs: AP / ESP / AUTO / Misc / プレイヤー / 作者 / Music
--- Note: Some exploits may not support Drawing/VirtualInputManager/keypress; graceful fallbacks included.
+-- Gg Hub : Full-integrated version with Troll Tab (client-side)
+-- Tabs: AP / ESP / AUTO / Misc / プレイヤー / 作者 / Music / Troll
+-- IMPORTANT: Many "global" visual effects are best-effort client->workspace creations.
+--            They may or may not be visible to other players depending on the game's protections.
 
--- Services & locals
+-- ===== Services / Locals =====
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local SoundService = game:GetService("SoundService")
+local StarterGui = game:GetService("StarterGui")
 
--- Load Rayfield UI
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+-- ===== Rayfield UI load =====
+local ok, Rayfield = pcall(function()
+    return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+end)
+if not ok or not Rayfield then
+    warn("[Gg Hub] Failed to load Rayfield UI. Aborting.")
+    return
+end
 
 local Window = Rayfield:CreateWindow({
     Name = "Gg Hub",
@@ -24,18 +32,7 @@ local Window = Rayfield:CreateWindow({
     }
 })
 
--- ======================================================
--- (existing cleanup / ESP / AP / AUTO / MISC / Player / Author)
--- Copied from your provided script (kept intact)
--- ======================================================
--- (I place the exact contents you provided earlier here — unchanged)
--- NOTE: For brevity in this message I will re-insert your original full script exactly as given,
--- then append the Music tab. (The content below is your original script verbatim.)
--- ===============================================================================
-
--- ======================================================
--- Global cleanup storage (stable names)
--- ======================================================
+-- ===== Global cleanup registries (to avoid duplicates on reload) =====
 if _G.GgHub_Billboards then
     for _, b in pairs(_G.GgHub_Billboards) do pcall(function() if b and b.Parent then b:Destroy() end end) end
 end
@@ -45,97 +42,36 @@ end
 if _G.GgHub_Tracers then
     for _, t in pairs(_G.GgHub_Tracers) do pcall(function() if t and t.line then pcall(function() t.line:Remove() end) end end) end
 end
+if _G.GgHub_MusicFolder then
+    pcall(function() if _G.GgHub_MusicFolder.Parent then _G.GgHub_MusicFolder:Destroy() end end)
+end
+if _G.GgHub_MiscFolder then
+    pcall(function() if _G.GgHub_MiscFolder.Parent then _G.GgHub_MiscFolder:Destroy() end end)
+end
 
 _G.GgHub_Billboards = {}
+_GgHub_Billboards = _G.GgHub_Billboards -- alias
 _G.GgHub_Highlights = {}
-_G.GgHub_Tracers = {} -- keyed by player.UserId
+_G.GgHub_Tracers = {}
+_G.GgHub_MusicFolder = nil
+_G.GgHub_MiscFolder = nil
 
-local billboards = _G.GgHub_Billboards
-local highlights = _G.GgHub_Highlights
-local tracers = _G.GgHub_Tracers
-
--- ======================================================
--- Helper: ESP create/remove functions
--- ======================================================
-local function createNameTag(plr)
-    if not plr or not plr.Character then return end
-    local head = plr.Character:FindFirstChild("Head")
-    if not head then return end
-    local existing = head:FindFirstChild("ESP_NameTag")
-    if existing then existing:Destroy() end
-
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = "ESP_NameTag"
-    billboard.Adornee = head
-    billboard.Size = UDim2.new(0,160,0,28)
-    billboard.StudsOffset = Vector3.new(0,2.5,0)
-    billboard.AlwaysOnTop = true
-    billboard.ResetOnSpawn = false
-
-    local label = Instance.new("TextLabel", billboard)
-    label.Size = UDim2.new(1,0,1,0)
-    label.BackgroundTransparency = 1
-    label.Text = plr.Name
-    label.TextColor3 = Color3.new(1,1,1)
-    label.Font = Enum.Font.SourceSansBold
-    label.TextScaled = true
-
-    billboard.Parent = head
-    billboards[plr.UserId] = billboard
-end
-
-local function removeNameTag(plr)
-    local b = billboards[plr.UserId]
-    if b then pcall(function() b:Destroy() end) end
-    billboards[plr.UserId] = nil
-end
-
-local function createHighlight(plr)
-    if not plr or not plr.Character then return end
-    local existing = plr.Character:FindFirstChild("ESP_Highlight")
-    if existing then existing:Destroy() end
-    local highlight = Instance.new("Highlight")
-    highlight.Name = "ESP_Highlight"
-    highlight.FillTransparency = 0.8
-    highlight.OutlineColor = Color3.fromRGB(0,255,0)
-    highlight.Parent = plr.Character
-    highlights[plr.UserId] = highlight
-end
-
-local function removeHighlight(plr)
-    local h = highlights[plr.UserId]
-    if h then pcall(function() h:Destroy() end) end
-    highlights[plr.UserId] = nil
-end
-
-local function createTracerObj(plr, color)
-    if tracers[plr.UserId] and tracers[plr.UserId].line then return end
-    local ok, line = pcall(function() return Drawing.new("Line") end)
-    if not ok or not line then return end
-    line.Color = color or Color3.fromRGB(255,0,0)
-    line.Thickness = 2
-    line.Visible = false
-    tracers[plr.UserId] = { line = line }
-end
-
-local function removeTracerObj(plr)
-    local t = tracers[plr.UserId]
-    if t and t.line then
-        pcall(function() t.line:Remove() end)
+-- ===== Helper: safe pcall create =====
+local function safeNew(className, props)
+    local ok, inst = pcall(function() return Instance.new(className) end)
+    if not ok then return nil end
+    if props and inst then
+        for k,v in pairs(props) do
+            pcall(function() inst[k] = v end)
+        end
     end
-    tracers[plr.UserId] = nil
+    return inst
 end
 
-local function cleanupPlayerESP(plr)
-    removeNameTag(plr)
-    removeHighlight(plr)
-    removeTracerObj(plr)
-end
-
--- ======================================================
+-- =========================
 -- AP Tab (Auto Parry)
--- ======================================================
-local TabAP = Window:CreateTab("AP", 4483362458)
+-- =========================
+local TabAP = Window:CreateTab("AP ⚔️", 7734053427)
 TabAP:CreateSection("Auto Parry")
 
 local autoParryEnabled = false
@@ -167,28 +103,19 @@ TabAP:CreateSlider({
 })
 
 local function sendFKey()
-    -- try VirtualInputManager
-    local ok = pcall(function()
+    -- Try VirtualInputManager, then keypress, else fallback
+    pcall(function()
         local vim = game:GetService("VirtualInputManager")
         vim:SendKeyEvent(true, Enum.KeyCode.F, false, game)
         task.wait(0.03)
         vim:SendKeyEvent(false, Enum.KeyCode.F, false, game)
     end)
-    if ok then return end
-    -- try keypress/keyrelease
-    ok = pcall(function()
+    pcall(function()
         if keypress and keyrelease then
             keypress(0x46)
             task.wait(0.03)
             keyrelease(0x46)
         end
-    end)
-    if ok then return end
-    -- fallback (may not be effective in many exploits)
-    pcall(function()
-        UIS.InputBegan:Fire({KeyCode = Enum.KeyCode.F, UserInputType = Enum.UserInputType.Keyboard}, false)
-        task.wait(0.03)
-        UIS.InputEnded:Fire({KeyCode = Enum.KeyCode.F, UserInputType = Enum.UserInputType.Keyboard}, false)
     end)
 end
 
@@ -196,33 +123,26 @@ local function isCharacterRed(char)
     if not char then return false end
     for _, part in ipairs(char:GetDescendants()) do
         if part:IsA("BasePart") then
-            local ok, c = pcall(function() return part.Color end)
-            if ok and c then
-                if c.R > 0.7 and c.G < 0.4 and c.B < 0.4 then
+            local success, c = pcall(function() return part.Color end)
+            if success and c then
+                if c.R > 0.7 and c.G < 0.5 and c.B < 0.5 then
                     return true
                 end
             end
         end
     end
-    -- check Highlight red
     local hl = char:FindFirstChildOfClass("Highlight")
-    if hl and hl.OutlineColor and hl.OutlineColor == Color3.fromRGB(255,0,0) then
-        return true
-    end
+    if hl and hl.OutlineColor and hl.OutlineColor == Color3.fromRGB(255,0,0) then return true end
     return false
 end
 
--- ball-like detection: prefer name contains "ball"; also accept roughly-spherical meshes (heuristic)
 local function isBallLike(obj, hrp)
     if not obj or not obj:IsA("BasePart") then return false end
     local name = tostring(obj.Name):lower()
     if not string.find(name, "ball") then
-        -- heuristic: roughly equal XYZ size and is a MeshPart (could be sphere)
         if obj:IsA("MeshPart") then
             local s = obj.Size
-            if math.abs(s.X - s.Y) < 0.1 and math.abs(s.Y - s.Z) < 0.1 then
-                -- ok, treat as ball-like
-            else
+            if not (math.abs(s.X - s.Y) < 0.2 and math.abs(s.Y - s.Z) < 0.2) then
                 return false
             end
         else
@@ -231,13 +151,13 @@ local function isBallLike(obj, hrp)
     end
     if obj.Anchored then return false end
     local vel = (obj.AssemblyLinearVelocity or obj.Velocity or Vector3.new(0,0,0))
-    if vel.Magnitude < 2 then return false end
+    if vel.Magnitude < 1.5 then return false end
     if hrp and vel.Magnitude > 0.01 then
         local toPlayer = (hrp.Position - obj.Position)
         if toPlayer.Magnitude > 0.5 then
             local dot = 0
             pcall(function() dot = (vel.Unit):Dot(toPlayer.Unit) end)
-            if dot < 0.2 then return false end
+            if dot < 0.15 then return false end
         end
     end
     return true
@@ -253,7 +173,6 @@ RunService.Heartbeat:Connect(function()
     if not isCharacterRed(char) then return end
     local now = tick()
     if now - lastParry < parryCooldown then return end
-
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and isBallLike(obj, hrp) then
             local dist = (obj.Position - hrp.Position).Magnitude
@@ -269,14 +188,93 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ======================================================
+-- =========================
 -- ESP Tab
--- ======================================================
-local TabESP = Window:CreateTab("ESP", 4483362458)
+-- =========================
+local TabESP = Window:CreateTab("ESP 👀", 6034509993)
 TabESP:CreateSection("ESP")
 
 local espState = { name = false, box = false, tracer = false }
 local tracerColor = Color3.fromRGB(255,0,0)
+local billboards = _G.GgHub_Billboards
+local highlights = _G.GgHub_Highlights
+local tracers = _G.GgHub_Tracers
+
+local function createNameTag(plr)
+    if not plr or not plr.Character then return end
+    local head = plr.Character:FindFirstChild("Head")
+    if not head then return end
+    local exist = head:FindFirstChild("ESP_NameTag")
+    if exist then exist:Destroy() end
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESP_NameTag"
+    billboard.Adornee = head
+    billboard.Size = UDim2.new(0,160,0,28)
+    billboard.StudsOffset = Vector3.new(0,2.5,0)
+    billboard.AlwaysOnTop = true
+    local label = Instance.new("TextLabel", billboard)
+    label.Size = UDim2.new(1,0,1,0)
+    label.BackgroundTransparency = 1
+    label.Text = plr.Name
+    label.TextColor3 = Color3.new(1,1,1)
+    label.Font = Enum.Font.SourceSansBold
+    label.TextScaled = true
+    billboard.Parent = head
+    billboards[plr.UserId] = billboard
+end
+
+local function removeNameTag(plr)
+    local b = billboards[plr.UserId]
+    if b then pcall(function() b:Destroy() end) end
+    billboards[plr.UserId] = nil
+end
+
+local function createHighlight(plr)
+    if not plr or not plr.Character then return end
+    local exist = plr.Character:FindFirstChild("ESP_Highlight")
+    if exist then exist:Destroy() end
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "ESP_Highlight"
+    highlight.FillTransparency = 0.8
+    highlight.OutlineColor = Color3.fromRGB(0,255,0)
+    highlight.Parent = plr.Character
+    highlights[plr.UserId] = highlight
+end
+
+local function removeHighlight(plr)
+    local h = highlights[plr.UserId]
+    if h then pcall(function() h:Destroy() end) end
+    highlights[plr.UserId] = nil
+end
+
+local function createTracerObj(plr, color)
+    if tracers[plr.UserId] and tracers[plr.UserId].line then return end
+    local success, line = pcall(function() return Drawing.new("Line") end)
+    if not success or not line then return end
+    line.Color = color or tracerColor
+    line.Thickness = 2
+    line.Visible = false
+    tracers[plr.UserId] = { line = line }
+end
+
+local function removeTracerObj(plr)
+    local t = tracers[plr.UserId]
+    if t and t.line then pcall(function() t.line:Remove() end) end
+    tracers[plr.UserId] = nil
+end
+
+local function cleanupPlayerESP(plr)
+    removeNameTag(plr)
+    removeHighlight(plr)
+    removeTracerObj(plr)
+end
+
+function applyESPToPlayer(plr)
+    if not plr or plr == LocalPlayer then return end
+    if espState.name then createNameTag(plr) else removeNameTag(plr) end
+    if espState.box then createHighlight(plr) else removeHighlight(plr) end
+    if espState.tracer then createTracerObj(plr, tracerColor) else removeTracerObj(plr) end
+end
 
 TabESP:CreateToggle({
     Name = "Name ESP",
@@ -324,14 +322,6 @@ TabESP:CreateButton({
     end
 })
 
--- applyESPToPlayer defined here (after TabESP UI to avoid forward ref issue)
-function applyESPToPlayer(plr)
-    if not plr or plr == LocalPlayer then return end
-    if espState.name then createNameTag(plr) else removeNameTag(plr) end
-    if espState.box then createHighlight(plr) else removeHighlight(plr) end
-    if espState.tracer then createTracerObj(plr, tracerColor) else removeTracerObj(plr) end
-end
-
 Players.PlayerAdded:Connect(function(plr)
     plr.CharacterAdded:Connect(function()
         task.wait(0.1)
@@ -340,7 +330,6 @@ Players.PlayerAdded:Connect(function(plr)
 end)
 Players.PlayerRemoving:Connect(function(plr) cleanupPlayerESP(plr) end)
 
--- Tracer update loop
 RunService.RenderStepped:Connect(function()
     if espState.tracer then
         for _, p in ipairs(Players:GetPlayers()) do
@@ -368,11 +357,11 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ======================================================
+-- =========================
 -- AUTO Tab (Anti AFK)
--- ======================================================
-local TabAuto = Window:CreateTab("AUTO", 4483362458)
-TabAuto:CreateSection("AUTO")
+-- =========================
+local TabAuto = Window:CreateTab("AUTO 🔄", 6031094678)
+TabAuto:CreateSection("Automation")
 
 local antiAfkEnabled = false
 TabAuto:CreateToggle({
@@ -389,20 +378,26 @@ task.spawn(function()
     end
 end)
 
--- ======================================================
--- Misc Tab (with Save/Load account-specific)
--- ======================================================
-local TabMisc = Window:CreateTab("Misc", 4483362458)
-TabMisc:CreateSection("Utility")
+-- =========================
+-- Misc Tab
+-- =========================
+local TabMisc = Window:CreateTab("Misc 🧰", 6031280882)
+TabMisc:CreateSection("Utilities")
 
 TabMisc:CreateButton({
     Name = "Reset Character",
-    Callback = function() if LocalPlayer.Character then pcall(function() LocalPlayer.Character:BreakJoints() end) end end
+    Callback = function()
+        if LocalPlayer.Character then pcall(function() LocalPlayer.Character:BreakJoints() end) end
+    end
 })
 
 TabMisc:CreateButton({
     Name = "Godmode",
-    Callback = function() if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then pcall(function() LocalPlayer.Character.Humanoid.Name = "GodHumanoid" end) end end
+    Callback = function()
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            pcall(function() LocalPlayer.Character.Humanoid.Name = "GodHumanoid" end)
+        end
+    end
 })
 
 TabMisc:CreateButton({
@@ -418,34 +413,25 @@ TabMisc:CreateButton({
 })
 
 TabMisc:CreateButton({
-    Name = "Save Setting",
+    Name = "Save Settings",
     Callback = function()
         pcall(function() Rayfield:SaveConfiguration() end)
-        pcall(function()
-            Rayfield:Notify({ Title = "Saved!", Content = "Settings saved for " .. LocalPlayer.Name, Duration = 4 })
-        end)
+        pcall(function() Rayfield:Notify({ Title = "Saved!", Content = "Settings saved for " .. LocalPlayer.Name, Duration = 4 }) end)
     end
 })
 
 TabMisc:CreateButton({
-    Name = "Load Setting",
+    Name = "Load Settings",
     Callback = function()
         pcall(function() Rayfield:LoadConfiguration() end)
-        pcall(function()
-            Rayfield:Notify({ Title = "Loaded!", Content = "Settings loaded for " .. LocalPlayer.Name, Duration = 4 })
-        end)
+        pcall(function() Rayfield:Notify({ Title = "Loaded!", Content = "Settings loaded for " .. LocalPlayer.Name, Duration = 4 }) end)
     end
 })
 
--- auto-load at startup (silent on failure)
-task.delay(1, function()
-    pcall(function() Rayfield:LoadConfiguration() end)
-end)
-
--- ======================================================
--- プレイヤー Tab (tab name Japanese; inner labels English)
--- ======================================================
-local TabPlayer = Window:CreateTab("プレイヤー", 4483362458)
+-- =========================
+-- Player Tab (Japanese)
+-- =========================
+local TabPlayer = Window:CreateTab("プレイヤー 🕺", 6034509994)
 TabPlayer:CreateSection("Player Settings")
 
 TabPlayer:CreateSlider({
@@ -453,7 +439,13 @@ TabPlayer:CreateSlider({
     Range = {16, 200},
     Increment = 1,
     CurrentValue = 16,
-    Callback = function(v) pcall(function() if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then LocalPlayer.Character.Humanoid.WalkSpeed = v end end) end
+    Callback = function(v)
+        pcall(function()
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                LocalPlayer.Character.Humanoid.WalkSpeed = v
+            end
+        end)
+    end
 })
 
 TabPlayer:CreateSlider({
@@ -461,7 +453,13 @@ TabPlayer:CreateSlider({
     Range = {50, 300},
     Increment = 5,
     CurrentValue = 50,
-    Callback = function(v) pcall(function() if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then LocalPlayer.Character.Humanoid.JumpPower = v end end) end
+    Callback = function(v)
+        pcall(function()
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                LocalPlayer.Character.Humanoid.JumpPower = v
+            end
+        end)
+    end
 })
 
 local infJump = false
@@ -474,7 +472,14 @@ UIS.JumpRequest:Connect(function() if infJump and LocalPlayer.Character and Loca
 
 TabPlayer:CreateButton({
     Name = "Set Health 500",
-    Callback = function() pcall(function() if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then LocalPlayer.Character.Humanoid.MaxHealth = 500 LocalPlayer.Character.Humanoid.Health = 500 end end) end
+    Callback = function()
+        pcall(function()
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                LocalPlayer.Character.Humanoid.MaxHealth = 500
+                LocalPlayer.Character.Humanoid.Health = 500
+            end
+        end)
+    end
 })
 
 local noclip = false
@@ -491,7 +496,7 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- Teleport dropdown (robust init)
+-- Teleport dropdown robust init
 local selectedPlayer = nil
 local function getPlayerNamesList()
     local list = {}
@@ -563,29 +568,25 @@ TabPlayer:CreateButton({
     end
 })
 
--- ======================================================
--- Author Tab (tab name Japanese)
--- ======================================================
-local TabAuthor = Window:CreateTab("作者", 4483362458)
+-- =========================
+-- Author Tab (Japanese)
+-- =========================
+local TabAuthor = Window:CreateTab("作者 ✍️", 6031280858)
 TabAuthor:CreateSection("Author Info")
 
 TabAuthor:CreateButton({ Name = "Copy Author: yajusaiko4545", Callback = function() pcall(function() setclipboard("yajusaiko4545") end) end })
 TabAuthor:CreateButton({ Name = "TikTok: yajusaiko4545", Callback = function() pcall(function() setclipboard("yajusaiko4545") end) end })
 TabAuthor:CreateButton({ Name = "Discord: yajusaiko4545", Callback = function() pcall(function() setclipboard("yajusaiko4545") end) end })
 
-print("[Gg Hub] Full restored loaded. If anything is missing, tell me which tab/feature and paste any runtime error.")
+-- =========================
+-- Music Tab (50 tracks placeholder)
+-- =========================
+local TabMusic = Window:CreateTab("Music 🎵", 6026663719)
+TabMusic:CreateSection("Music Player (Global-ish)")
 
--- ======================================================
--- Music Tab (ADDED) : 全員に聞こえる方式（workspaceに Sound を生成）
--- ======================================================
-local TabMusic = Window:CreateTab("Music", 4483362458)
-TabMusic:CreateSection("Music Player (Global)")
-
--- ========== Song list (numbered 1..50) ==========
--- These are candidate SoundIds collected from public lists / common Roblox audio IDs.
--- You can replace any ID with a correct one later.
+-- song table: keys ordered like "01. Name" etc
 local Songs = {
-    -- 1..10 (seeded from earlier finds)
+    -- Note: many placeholder IDs — replace with valid rbxassetids as needed
     ["1. Infernal Funk"] = "rbxassetid://1835774571",
     ["2. Funk (generic)"] = "rbxassetid://79004524366784",
     ["3. Bouncy Funk"] = "rbxassetid://1839802242",
@@ -596,7 +597,7 @@ local Songs = {
     ["8. Brazil Do Funk"] = "rbxassetid://133498554139200",
     ["9. What The Funk?"] = "rbxassetid://82585964553305",
     ["10. Freaky Funk"] = "rbxassetid://73140398421340",
-    -- 11..20 (brazil funk picks)
+    -- 11..50 (some placeholders / repeats)
     ["11. Clap"] = "rbxassetid://1845351312",
     ["12. Funk da Favela"] = "rbxassetid://1837196820",
     ["13. F-360"] = "rbxassetid://1841682637",
@@ -607,7 +608,6 @@ local Songs = {
     ["18. Brazil Funk 80s"] = "rbxassetid://133498554139200",
     ["19. Funk Sample A"] = "rbxassetid://1841682507",
     ["20. Funk Sample B"] = "rbxassetid://127091051322471",
-    -- 21..30 (phonk-ish / lo-fi picks)
     ["21. Phonk Loop 1"] = "rbxassetid://7345678901",
     ["22. Phonk Loop 2"] = "rbxassetid://8456789012",
     ["23. Phonk Beat 3"] = "rbxassetid://6983600450",
@@ -618,7 +618,6 @@ local Songs = {
     ["28. Phonk Sample X"] = "rbxassetid://9054321234",
     ["29. Phonk Sample Y"] = "rbxassetid://9054325678",
     ["30. Phonk Sample Z"] = "rbxassetid://9054329999",
-    -- 31..40 (more funk / remixes)
     ["31. Funk Remix 1"] = "rbxassetid://1837199999",
     ["32. Funk Remix 2"] = "rbxassetid://1837200001",
     ["33. Funk Groove 1"] = "rbxassetid://1849999999",
@@ -629,7 +628,6 @@ local Songs = {
     ["38. Dance Funk 2"] = "rbxassetid://1330001111",
     ["39. Bass Funk"] = "rbxassetid://1400000000",
     ["40. Electro Funk"] = "rbxassetid://1410000001",
-    -- 41..50 (misc / user favorites)
     ["41. Masha UltraFunk"] = "rbxassetid://1848354536",
     ["42. Vem No Pique"] = "rbxassetid://6715959738",
     ["43. KrushDaFight"] = "rbxassetid://9123456780",
@@ -642,26 +640,17 @@ local Songs = {
     ["50. Sample Funk 50"] = "rbxassetid://234567890123456",
 }
 
--- helper: get keys in order
+-- prepare songKeys in numeric order
 local songKeys = {}
 for k,_ in pairs(Songs) do table.insert(songKeys,k) end
 table.sort(songKeys, function(a,b)
-    -- sort by leading number if present, otherwise lexicographic
     local na = tonumber(a:match("^(%d+)")) or 9999
     local nb = tonumber(b:match("^(%d+)")) or 9999
     if na ~= nb then return na < nb end
     return a < b
 end)
 
--- Music control vars
-local currentSoundObject = nil
-local currentSongKey = nil
-local currentVolume = 5 -- default 5
-local autoPlay = false
-local randomMode = false
-local autoplayTask = nil
-
--- ensure we have a persistent workspace container
+-- music storage
 local musicFolderName = "_GgHub_MusicParts"
 local musicFolder = workspace:FindFirstChild(musicFolderName)
 if not musicFolder then
@@ -669,41 +658,42 @@ if not musicFolder then
     musicFolder.Name = musicFolderName
     musicFolder.Parent = workspace
 end
+_G.GgHub_MusicFolder = musicFolder
+
+local currentSoundObject = nil
+local currentSongKey = nil
+local currentVolume = 5
+local autoPlay = false
+local randomMode = false
+local autoplayTask = nil
 
 local function cleanupMusic()
-    -- stop and destroy any existing sound parts we created
-    for _, obj in ipairs(musicFolder:GetChildren()) do
-        pcall(function() obj:Destroy() end)
-    end
+    for _, obj in ipairs(musicFolder:GetChildren()) do pcall(function() obj:Destroy() end) end
     currentSoundObject = nil
     currentSongKey = nil
 end
 
 local function createAndPlayGlobalSound(soundId)
-    -- stop existing
     cleanupMusic()
-    -- create part that holds sound (so it exists in workspace)
     local part = Instance.new("Part")
     part.Name = "GgHub_MusicPart"
     part.Size = Vector3.new(1,1,1)
     part.Transparency = 1
     part.CanCollide = false
-    part.Anchored = true
+    -- place near local player (best-effort)
     part.CFrame = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.CFrame) or CFrame.new(0,10,0)
+    part.Anchored = true
     part.Parent = musicFolder
 
     local sound = Instance.new("Sound")
     sound.Name = "GgHub_Sound"
     sound.SoundId = tostring(soundId)
     sound.Looped = true
-    sound.Volume = currentVolume
+    pcall(function() sound.Volume = currentVolume end)
     sound.RollOffMode = Enum.RollOffMode.Linear
     sound.Parent = part
-    -- play
     pcall(function() sound:Play() end)
     currentSoundObject = { part = part, sound = sound }
-    -- keep part positioned near localplayer so others can hear (best-effort)
-    -- we won't continuously move it to avoid extra workload, but we can try to move it once when character spawns
 end
 
 local function playSongByKey(key)
@@ -752,175 +742,292 @@ local function prevSong()
     end
 end
 
--- autoplay loop handler
-local function startAutoPlayLoop()
-    if autoplayTask then return end
-    autoplayTask = task.spawn(function()
-        while autoPlay do
-            -- wait for current to end; if looped, we emulate change every 120s to avoid infinite same song when looped
-            local waitTime = 120
-            if currentSoundObject and currentSoundObject.sound then
-                -- try to use TimeLength if available
-                local ok, len = pcall(function() return currentSoundObject.sound.TimeLength end)
-                if ok and type(len)=="number" and len>1 and not currentSoundObject.sound.Looped then
-                    waitTime = len
-                end
-            end
-            task.wait(waitTime)
-            if not autoPlay then break end
-            nextSong()
-        end
-        autoplayTask = nil
-    end)
-end
-
-local function stopAutoPlayLoop()
-    autoPlay = false
-    if autoplayTask then
-        -- autoplay loop checks autoPlay flag and will exit
-        autoplayTask = nil
-    end
-end
-
--- UI: Dropdown list of songs
+-- Music UI
 local dropdownOptions = {}
-for i,k in ipairs(songKeys) do
-    table.insert(dropdownOptions, k)
-end
-
+for i,k in ipairs(songKeys) do table.insert(dropdownOptions, k) end
 local selectedSongOption = nil
 local songDropdown = TabMusic:CreateDropdown({
     Name = "Select Song (1-50)",
     Options = dropdownOptions,
     CurrentOption = dropdownOptions[1] or "",
-    Callback = function(option)
-        selectedSongOption = option
+    Callback = function(option) selectedSongOption = option end
+})
+
+TabMusic:CreateButton({ Name = "Play", Callback = function() if selectedSongOption then playSongByKey(selectedSongOption) else playSongByKey(songKeys[1]) end end })
+TabMusic:CreateButton({ Name = "Stop", Callback = function() stopMusic() end })
+TabMusic:CreateButton({ Name = "Next", Callback = function() nextSong() end })
+TabMusic:CreateButton({ Name = "Prev", Callback = function() prevSong() end })
+TabMusic:CreateToggle({ Name = "Random Mode", CurrentValue = false, Flag = "MusicRandomMode", Callback = function(val) randomMode = val end })
+TabMusic:CreateButton({ Name = "Random Play (one song)", Callback = function() local idx = math.random(1,#songKeys) playSongByKey(songKeys[idx]) end })
+TabMusic:CreateSlider({ Name = "Volume (1-20)", Range = {1,20}, Increment = 1, CurrentValue = currentVolume, Callback = function(v) currentVolume = v if currentSoundObject and currentSoundObject.sound then pcall(function() currentSoundObject.sound.Volume = currentVolume end) end end })
+TabMusic:CreateToggle({ Name = "Auto Play", CurrentValue = false, Flag = "MusicAutoPlayFlag", Callback = function(val) autoPlay = val if autoPlay then if not autoplayTask then autoplayTask = task.spawn(function() while autoPlay do local waitTime = 120 if currentSoundObject and currentSoundObject.sound then local ok,len = pcall(function() return currentSoundObject.sound.TimeLength end) if ok and type(len)=="number" and len>1 and not currentSoundObject.sound.Looped then waitTime = len end end task.wait(waitTime) if not autoPlay then break end nextSong() end autoplayTask = nil end) end else autoPlay = false end end })
+TabMusic:CreateButton({ Name = "Save Music Settings", Callback = function() pcall(function() Rayfield:SaveConfiguration() Rayfield:Notify({Title="Music", Content="Music settings saved", Duration=3}) end) end })
+TabMusic:CreateButton({ Name = "Load Music Settings", Callback = function() pcall(function() Rayfield:LoadConfiguration() Rayfield:Notify({Title="Music", Content="Music settings loaded", Duration=3}) end) end })
+
+-- =========================
+-- Troll Tab (All features requested)
+-- =========================
+local TabTroll = Window:CreateTab("Troll 😈", 7743878856)
+TabTroll:CreateSection("Fun / Prank Tools (visual only)")
+
+-- ensure misc folder exists to store generated prank objects
+local miscFolderName = "_GgHub_MiscEffects"
+local miscFolder = workspace:FindFirstChild(miscFolderName)
+if not miscFolder then
+    miscFolder = Instance.new("Folder")
+    miscFolder.Name = miscFolderName
+    miscFolder.Parent = workspace
+end
+_G.GgHub_MiscFolder = miscFolder
+
+-- helper spawn function
+local function spawnPartAt(pos, size, color, anchored, lifetime, material)
+    local p = Instance.new("Part")
+    p.Size = size or Vector3.new(1,1,1)
+    p.Position = pos or Vector3.new(0,10,0)
+    p.Anchored = anchored == nil and false or anchored
+    p.CanCollide = false
+    p.Material = material or Enum.Material.Neon
+    p.Color = color or Color3.fromRGB(255,255,255)
+    p.Parent = miscFolder
+    if lifetime and lifetime > 0 then
+        task.delay(lifetime, function() p:Destroy() end)
+    end
+    return p
+end
+
+-- Helper: create decorative explosion (visual only)
+local function fakeExplosionAt(pos, radius)
+    local r = radius or 6
+    -- particles-like: create many small parts outward
+    for i=1,20 do
+        local dir = Vector3.new((math.random()-0.5)*2, (math.random()-0.2)*2, (math.random()-0.5)*2).Unit
+        local sp = spawnPartAt(pos + dir * 0.5, Vector3.new(0.4,0.4,0.4), Color3.fromHSV(math.random(),1,1), false, 6, Enum.Material.Neon)
+        pcall(function()
+            sp.AssemblyLinearVelocity = dir * (20 + math.random()*40)
+            sp.AssemblyAngularVelocity = Vector3.new(math.random()*10,math.random()*10,math.random()*10)
+        end)
+    end
+    -- ring
+    for i=1,18 do
+        local ang = (i/18) * math.pi*2
+        local offset = Vector3.new(math.cos(ang)*r, 0, math.sin(ang)*r)
+        local ring = spawnPartAt(pos + offset + Vector3.new(0,2,0), Vector3.new(1,1,1), Color3.fromRGB(255,160,0), false, 6, Enum.Material.Neon)
+        pcall(function() ring.AssemblyLinearVelocity = Vector3.new(0, 20, 0) end)
+    end
+end
+
+-- Fake Kill Notification (local system chat style)
+TabTroll:CreateButton({
+    Name = "Fake Kill Notification",
+    Callback = function()
+        local txt = string.format("[KILL] %s was eliminated by an unknown force.", LocalPlayer.Name)
+        StarterGui:SetCore("ChatMakeSystemMessage", {
+            Text = txt,
+            Color = Color3.fromRGB(255,80,80),
+            Font = Enum.Font.SourceSansBold,
+            FontSize = Enum.FontSize.Size24
+        })
     end
 })
 
--- Play button
-TabMusic:CreateButton({
-    Name = "Play",
+-- Global BGM quick play (uses existing Songs list; plays in workspace so others may hear)
+TabTroll:CreateDropdown({
+    Name = "Prank Music (Select)",
+    Options = songKeys,
+    CurrentOption = songKeys[1],
+    Callback = function(opt) TabTroll.SelectedPrankSong = opt end
+})
+TabTroll:CreateButton({
+    Name = "Play Prank Music (Global-ish)",
     Callback = function()
-        if selectedSongOption then
-            playSongByKey(selectedSongOption)
-        else
-            -- play first if none selected
-            playSongByKey(songKeys[1])
+        local sel = TabTroll.SelectedPrankSong or songKeys[1]
+        if Songs[sel] then
+            createAndPlayGlobalSound(Songs[sel])
+            Rayfield:Notify({ Title = "Troll", Content = "Prank music playing (best-effort global).", Duration = 3 })
         end
     end
 })
-
--- Stop button
-TabMusic:CreateButton({
-    Name = "Stop",
+TabTroll:CreateButton({
+    Name = "Stop Prank Music",
     Callback = function()
         stopMusic()
+        Rayfield:Notify({ Title = "Troll", Content = "Prank music stopped.", Duration = 2 })
     end
 })
 
--- Next / Prev
-TabMusic:CreateButton({
-    Name = "Next",
+-- Fake Explosion (visual only) at player's position
+TabTroll:CreateButton({
+    Name = "Fake Explosion (Local Visual)",
     Callback = function()
-        nextSong()
-    end
-})
-TabMusic:CreateButton({
-    Name = "Prev",
-    Callback = function()
-        prevSong()
-    end
-})
-
--- Random toggle and button
-TabMusic:CreateToggle({
-    Name = "Random Mode",
-    CurrentValue = false,
-    Flag = "MusicRandomMode",
-    Callback = function(val)
-        randomMode = val
-    end
-})
-
-TabMusic:CreateButton({
-    Name = "Random Play (one song now)",
-    Callback = function()
-        local idx = math.random(1,#songKeys)
-        playSongByKey(songKeys[idx])
-    end
-})
-
--- Volume slider (1..20 default 5)
-TabMusic:CreateSlider({
-    Name = "Volume (1-20)",
-    Range = {1,20},
-    Increment = 1,
-    CurrentValue = currentVolume,
-    Callback = function(v)
-        currentVolume = v
-        if currentSoundObject and currentSoundObject.sound then
-            pcall(function() currentSoundObject.sound.Volume = currentVolume end)
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            fakeExplosionAt(hrp.Position, 6)
+            Rayfield:Notify({ Title = "Troll", Content = "Boom! (visual only)", Duration = 2 })
         end
     end
 })
 
--- AutoPlay toggle (load last saved preference on start)
-TabMusic:CreateToggle({
-    Name = "Auto Play (load last saved)",
+-- Spawn Giant Text (LOL / GG / FUNK)
+TabTroll:CreateDropdown({
+    Name = "Giant Text",
+    Options = {"LOL","GG","FUNK"},
+    CurrentOption = "LOL",
+    Callback = function(opt) TabTroll.GiantTextChoice = opt end
+})
+TabTroll:CreateButton({
+    Name = "Spawn Giant Text Nearby",
+    Callback = function()
+        local text = TabTroll.GiantTextChoice or "LOL"
+        local pos = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position + Vector3.new(0,10,0)) or Vector3.new(0,10,0)
+        local base = Instance.new("Part")
+        base.Size = Vector3.new(#text*2, 5, 1)
+        base.Anchored = true
+        base.CanCollide = false
+        base.Position = pos
+        base.Transparency = 1
+        base.Parent = miscFolder
+        local gui = Instance.new("SurfaceGui", base)
+        gui.Face = Enum.NormalId.Front
+        gui.AlwaysOnTop = true
+        local label = Instance.new("TextLabel", gui)
+        label.Size = UDim2.new(1,0,1,0)
+        label.Text = text
+        label.TextScaled = true
+        label.Font = Enum.Font.Fantasy
+        label.TextColor3 = Color3.fromRGB(255,0,0)
+        -- auto remove
+        task.delay(12, function() pcall(function() base:Destroy() end) end)
+    end
+})
+
+-- Spawn Dummy Player (visual)
+TabTroll:CreateButton({
+    Name = "Spawn Dummy Player",
+    Callback = function()
+        local hrpPos = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position) or Vector3.new(0,5,0)
+        local dummy = Instance.new("Part")
+        dummy.Size = Vector3.new(2,5,1)
+        dummy.Position = hrpPos + Vector3.new(5,0,0)
+        dummy.Anchored = true
+        dummy.CanCollide = false
+        dummy.BrickColor = BrickColor.Random()
+        dummy.Name = "GgHub_Dummy"
+        dummy.Parent = miscFolder
+        -- simple head label
+        local head = Instance.new("Part")
+        head.Size = Vector3.new(1.2,1.2,1.2)
+        head.Position = dummy.Position + Vector3.new(0,3.2,0)
+        head.Anchored = true
+        head.Parent = miscFolder
+        local billboard = Instance.new("BillboardGui", head)
+        billboard.Size = UDim2.new(0,120,0,40)
+        billboard.AlwaysOnTop = true
+        local lbl = Instance.new("TextLabel", billboard)
+        lbl.Size = UDim2.new(1,0,1,0)
+        lbl.Text = "Dummy"
+        lbl.TextScaled = true
+        task.delay(18, function() pcall(function() dummy:Destroy() head:Destroy() end) end)
+    end
+})
+
+-- Fake System Message (local)
+TabTroll:CreateButton({
+    Name = "Fake System Message",
+    Callback = function()
+        StarterGui:SetCore("ChatMakeSystemMessage", {
+            Text = "⚠ Server maintenance in 10s (just a prank)",
+            Color = Color3.fromRGB(255,200,0),
+            Font = Enum.Font.SourceSansBold,
+            FontSize = Enum.FontSize.Size24
+        })
+    end
+})
+
+-- Big Head (local for everyone? Here implemented local and best-effort attempt on all characters if visible)
+TabTroll:CreateButton({
+    Name = "Big Head (Local)",
+    Callback = function()
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Character and p.Character:FindFirstChild("Head") then
+                pcall(function() p.Character.Head.Size = Vector3.new(6,6,6) end)
+            end
+        end
+        Rayfield:Notify({ Title="Troll", Content="Attempted Big Head (local change).", Duration=3 })
+    end
+})
+
+-- Fly toggle (local)
+local flying = false
+TabTroll:CreateToggle({
+    Name = "Fly (local)",
     CurrentValue = false,
-    Flag = "MusicAutoPlayFlag",
-    Callback = function(val)
-        autoPlay = val
-        if autoPlay then
-            -- start autoplay (will move to next periodically)
-            startAutoPlayLoop()
-        else
-            stopAutoPlayLoop()
+    Callback = function(state)
+        flying = state
+        if flying then
+            task.spawn(function()
+                while flying do
+                    task.wait(0.12)
+                    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                        -- small upward force to "hover"
+                        local hrp = LocalPlayer.Character.HumanoidRootPart
+                        hrp.Velocity = Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z)
+                    end
+                end
+            end)
         end
     end
 })
 
--- Save selected song & volume in Rayfield config
-TabMusic:CreateButton({
-    Name = "Save Music Settings",
+-- Force All Players Jump (local attempt)
+TabTroll:CreateButton({
+    Name = "Force All Players Jump (local attempts)",
     Callback = function()
-        -- Save settings using Rayfield config (flags)
-        pcall(function()
-            Rayfield:SaveConfiguration()
-            Rayfield:Notify({Title="Music", Content="Music settings saved", Duration=3})
-        end)
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Character and p.Character:FindFirstChild("Humanoid") then
+                pcall(function() p.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end)
+            end
+        end
     end
 })
 
--- Load saved settings
-TabMusic:CreateButton({
-    Name = "Load Music Settings",
+-- Glow Aura (local on localplayer)
+TabTroll:CreateButton({
+    Name = "Glow Aura (local)",
     Callback = function()
-        pcall(function()
-            Rayfield:LoadConfiguration()
-            Rayfield:Notify({Title="Music", Content="Music settings loaded", Duration=3})
-        end)
+        if LocalPlayer.Character then
+            local hl = Instance.new("Highlight")
+            hl.Name = "GgHub_GlowAura"
+            hl.FillTransparency = 0.6
+            hl.OutlineColor = Color3.fromRGB(255,0,255)
+            hl.Parent = LocalPlayer.Character
+            task.delay(20, function() pcall(function() if hl and hl.Parent then hl:Destroy() end end) end)
+        end
     end
 })
 
--- Auto-load on startup: try to restore previous selection and autoplay
-task.spawn(function()
-    task.wait(1)
-    -- Attempt to restore flags - Rayfield stores flags, so CurrentOption etc may be restored automatically.
-    -- If a saved option exists, set selectedSongOption accordingly (some Rayfield versions do this automatically)
-    pcall(function()
-        -- no-op: Rayfield handles flag restore on create if configured
-    end)
-    -- If autoPlay flag was saved as true, start autoplay
-    local savedAuto = false
-    pcall(function() savedAuto = Rayfield.Flags and Rayfield.Flags["MusicAutoPlayFlag"] end)
-    if savedAuto then
-        autoPlay = true
-        startAutoPlayLoop()
+-- Cleanup misc effects
+TabTroll:CreateButton({
+    Name = "Cleanup Troll Effects",
+    Callback = function()
+        pcall(function()
+            for _, obj in ipairs(miscFolder:GetChildren()) do pcall(function() obj:Destroy() end) end
+        end)
+        Rayfield:Notify({ Title="Troll", Content="Cleaned up troll effects.", Duration=2 })
     end
+})
+
+-- =========================
+-- Final: notifications & auto-load config
+-- =========================
+task.delay(0.7, function()
+    pcall(function() Rayfield:LoadConfiguration() end)
 end)
 
--- End of Music tab addition
+Rayfield:Notify({
+    Title = "Gg Hub",
+    Content = "Loaded: AP / ESP / AUTO / Misc / プレイヤー / 作者 / Music / Troll",
+    Duration = 4
+})
 
-print("[Gg Hub] Music tab added (50 songs). Remember: replace placeholder SoundIds with working IDs if any fail.")
+print("[Gg Hub] Loaded full build with Troll tab. Test features in private server first.")
