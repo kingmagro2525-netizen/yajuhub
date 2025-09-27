@@ -1,3 +1,4 @@
+print("Gghub.lua 読み込み成功！")
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 local Window = Rayfield:CreateWindow({
 Name = "Gg Hub",
