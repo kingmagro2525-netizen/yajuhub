@@ -11,13 +11,12 @@ screenGui.Parent = playerGui
 
 local label = Instance.new("TextLabel")
 label.Size = UDim2.new(0, 520, 0, 70)
-label.Position = UDim2.new(0.5, -260, 0.5, -35)
-label.AnchorPoint = Vector2.new(0.5, 0.5)
+label.Position = UDim2.new(0.5, 0, 0.5, 0) -- 完全中央
+label.AnchorPoint = Vector2.new(0.5, 0.5)   -- 中央基準
 label.BackgroundTransparency = 0.3
 label.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 label.TextColor3 = Color3.fromRGB(255, 255, 255)
 label.TextScaled = true
-label.FontFace = Font.fromId(12187363887)
 label.Text = "ただいまこのスクリプトは使えません"
 label.TextWrapped = true
 label.Parent = screenGui
