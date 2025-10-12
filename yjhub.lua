@@ -1,4 +1,3 @@
--- 🌟 やじゅうの花火EX - KRNL + Rayfield Anchored + 個別保存(JSON版)
 local HttpService = game:GetService("HttpService")
 local success, Rayfield = pcall(function()
     return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -12,7 +11,7 @@ local Window = Rayfield:CreateWindow({
     Name = "やじゅうの花火",
     LoadingTitle = "ロード中 やじゅうの花火",
     LoadingSubtitle = "by yajusaiko4545",
-    ConfigurationSaving = {Enabled = false} -- Rayfield側は無効化
+    ConfigurationSaving = {Enabled = false}
 })
 
 local player = game.Players.LocalPlayer
@@ -25,7 +24,6 @@ local sparklerList = {}
 local angle = 0
 local railDirections, railOffsets, railTargets = {}, {}, {}
 
--- モードごとの設定初期化
 local modes = {"星","丸","変化","マジック"}
 local modeConfigs = {}
 
@@ -43,7 +41,6 @@ local function saveModeConfig(mode)
     writefile(filename, HttpService:JSONEncode(modeConfigs[mode]))
 end
 
--- 🔍 スパークラー検出（Anchored + サーバーオーナー）
 local function findNearbySparklers(radius)
     local found = {}
     for _, obj in pairs(workspace:GetDescendants()) do
@@ -60,7 +57,6 @@ local function findNearbySparklers(radius)
     return found
 end
 
--- 🌟 星モード位置計算
 local function getStarPathPos(i, t)
     local step = math.pi*2/5
     local points = {}
@@ -78,7 +74,6 @@ local function getStarPathPos(i, t)
     return Vector3.new(pos.X, modeConfigs["星"].Height, pos.Z)
 end
 
--- 💫 各モードターゲット
 local function getTargetPos(mode, i, t)
     local cfg = modeConfigs[mode]
     if mode=="星" then
@@ -101,7 +96,6 @@ local function getTargetPos(mode, i, t)
     end
 end
 
--- 🎬 メインループ
 task.spawn(function()
     while task.wait(0.02) do
         if enabled and activeMode and #sparklerList>0 then
@@ -118,7 +112,6 @@ task.spawn(function()
     end
 end)
 
--- 🧩 モードタブ作成関数
 local function createModeTab(modeName, icon)
     local tab = Window:CreateTab(modeName, icon)
     local cfg = modeConfigs[modeName]
@@ -183,7 +176,6 @@ local function createModeTab(modeName, icon)
     })
 end
 
--- 🌟 各モードタブ作成
 for _, mode in ipairs(modes) do
     createModeTab(mode, 4483362458)
 end
