@@ -118,7 +118,7 @@ local function createModeTab(modeName, icon)
     })
     tab:CreateSlider({
         Name = "スピード",
-        Range = {1, 300},
+        Range = {1, 1000},
         Increment = 1,
         CurrentValue = speed,
         Callback = function(v) speed = v end
