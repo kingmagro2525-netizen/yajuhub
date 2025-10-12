@@ -1,15 +1,18 @@
--- 🌟 やじゅうの花火EX - モード別タブ版
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+-- 🌟 やじゅうの花火EX - KRNL + Rayfield Anchored + 個別保存(JSON版)
+local HttpService = game:GetService("HttpService")
+local success, Rayfield = pcall(function()
+    return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+end)
+if not success then
+    warn("Rayfieldロード失敗")
+    return
+end
 
 local Window = Rayfield:CreateWindow({
     Name = "やじゅうの花火",
     LoadingTitle = "ロード中 やじゅうの花火",
     LoadingSubtitle = "by yajusaiko4545",
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = nil,
-        FileName = "sparklerConfig_tabs"
-    }
+    ConfigurationSaving = {Enabled = false} -- Rayfield側は無効化
 })
 
 local player = game.Players.LocalPlayer
@@ -20,15 +23,35 @@ local activeMode = nil
 local enabled = false
 local sparklerList = {}
 local angle = 0
-local height, size, speed = 10, 10, 2
-local railDirections, railOffsets = {}, {}
+local railDirections, railOffsets, railTargets = {}, {}, {}
 
--- 🔍 スパークラー検出
+-- モードごとの設定初期化
+local modes = {"星","丸","変化","マジック"}
+local modeConfigs = {}
+
+for _, mode in ipairs(modes) do
+    local filename = mode.."_config.json"
+    if isfile(filename) then
+        modeConfigs[mode] = HttpService:JSONDecode(readfile(filename))
+    else
+        modeConfigs[mode] = {Height=10, Size=10, Speed=2}
+    end
+end
+
+local function saveModeConfig(mode)
+    local filename = mode.."_config.json"
+    writefile(filename, HttpService:JSONEncode(modeConfigs[mode]))
+end
+
+-- 🔍 スパークラー検出（Anchored + サーバーオーナー）
 local function findNearbySparklers(radius)
     local found = {}
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Name:lower():find("base") then
             if (obj.Position - head.Position).Magnitude < radius then
+                pcall(function()
+                    obj:SetNetworkOwner(nil)
+                end)
                 obj.Anchored = true
                 table.insert(found, obj)
             end
@@ -37,61 +60,58 @@ local function findNearbySparklers(radius)
     return found
 end
 
--- 🌟 星モード
+-- 🌟 星モード位置計算
 local function getStarPathPos(i, t)
-    local starPoints = {}
-    local step = math.pi * 2 / 5
-    for k = 1, 5 do
-        local ang = step * (k - 1)
-        starPoints[k] = Vector3.new(math.cos(ang), 0, math.sin(ang))
+    local step = math.pi*2/5
+    local points = {}
+    for k=1,5 do
+        points[k] = Vector3.new(math.cos(step*(k-1)),0,math.sin(step*(k-1)))
     end
-    local order = {1, 3, 5, 2, 4, 1}
-    local totalSeg = #order - 1
-    local seg = ((i + t / 10) % totalSeg) + 1
+    local order = {1,3,5,2,4,1}
+    local totalSeg = #order-1
+    local seg = ((i+t/10)%totalSeg)+1
     local idx = math.floor(seg)
-    local ratio = seg - idx
-    local p1 = starPoints[order[idx]]
-    local p2 = starPoints[order[idx + 1]]
-    local pos = p1:Lerp(p2, ratio) * size
-    return Vector3.new(pos.X, height, pos.Z)
+    local ratio = seg-idx
+    local p1 = points[order[idx]]
+    local p2 = points[order[idx+1]]
+    local pos = p1:Lerp(p2, ratio) * modeConfigs["星"].Size
+    return Vector3.new(pos.X, modeConfigs["星"].Height, pos.Z)
 end
 
--- 💫 各モード位置決定
+-- 💫 各モードターゲット
 local function getTargetPos(mode, i, t)
-    if mode == "星" then
-        return getStarPathPos(i, t)
-    elseif mode == "丸" then
-        local count = math.max(1, #sparklerList)
-        local angleDeg = (i - 1) * (360 / count) + t
-        local rad = math.rad(angleDeg)
-        return Vector3.new(math.cos(rad) * size, height, math.sin(rad) * size)
-    elseif mode == "変化" then
-        local rad = math.rad(t + i * 15)
-        local spiral = size * 0.8 + (i * 0.3)
-        return Vector3.new(math.cos(rad) * spiral, height + math.sin(rad * 2) * 3, math.sin(rad) * spiral)
-    elseif mode == "マジック" then
+    local cfg = modeConfigs[mode]
+    if mode=="星" then
+        return getStarPathPos(i,t)
+    elseif mode=="丸" then
+        local count = math.max(1,#sparklerList)
+        local rad = math.rad((i-1)*(360/count)+t)
+        return Vector3.new(math.cos(rad)*cfg.Size, cfg.Height, math.sin(rad)*cfg.Size)
+    elseif mode=="変化" then
+        local rad = math.rad(t+i*15)
+        local spiral = cfg.Size*0.8 + i*0.3
+        return Vector3.new(math.cos(rad)*spiral, cfg.Height + math.sin(rad*2)*3, math.sin(rad)*spiral)
+    elseif mode=="マジック" then
+        local current = railTargets[i] or Vector3.new()
         local dir = railDirections[i]
         local offset = railOffsets[i]
-        local movement = math.sin(t * 0.05 * speed + offset) * size
-        return dir * movement
+        local target = dir*(math.sin(t*0.05*cfg.Speed + offset)*cfg.Size)
+        railTargets[i] = current:Lerp(target, 0.1)
+        return railTargets[i]
     end
 end
 
 -- 🎬 メインループ
 task.spawn(function()
     while task.wait(0.02) do
-        if enabled and activeMode and #sparklerList > 0 then
+        if enabled and activeMode and #sparklerList>0 then
             if not head or not head.Parent then continue end
-            angle += speed
-            for i, base in pairs(sparklerList) do
+            local cfg = modeConfigs[activeMode]
+            angle += cfg.Speed
+            for i, base in ipairs(sparklerList) do
                 if base and base.Parent then
                     local targetOffset = getTargetPos(activeMode, i, angle)
-                    local targetPos = head.Position + targetOffset
-                    if targetPos.Magnitude < 10000 then
-                        base.CFrame = CFrame.new(targetPos, head.Position)
-                    else
-                        base.CFrame = CFrame.new(head.Position)
-                    end
+                    base.CFrame = CFrame.new(head.Position + targetOffset, head.Position)
                 end
             end
         end
@@ -100,28 +120,40 @@ end)
 
 -- 🧩 モードタブ作成関数
 local function createModeTab(modeName, icon)
-    local tab = Window:CreateTab(modeName .. "", icon)
+    local tab = Window:CreateTab(modeName, icon)
+    local cfg = modeConfigs[modeName]
 
     tab:CreateSlider({
         Name = "高さ",
-        Range = {1, 200},
+        Range = {1,200},
         Increment = 1,
-        CurrentValue = height,
-        Callback = function(v) height = v end
+        CurrentValue = cfg.Height,
+        Callback = function(v)
+            cfg.Height = v
+            saveModeConfig(modeName)
+        end
     })
+
     tab:CreateSlider({
         Name = "大きさ",
-        Range = {1, 1000},
+        Range = {1,1000},
         Increment = 1,
-        CurrentValue = size,
-        Callback = function(v) size = v end
+        CurrentValue = cfg.Size,
+        Callback = function(v)
+            cfg.Size = v
+            saveModeConfig(modeName)
+        end
     })
+
     tab:CreateSlider({
         Name = "スピード",
-        Range = {1, 1000},
+        Range = {1,1000},
         Increment = 1,
-        CurrentValue = speed,
-        Callback = function(v) speed = v end
+        CurrentValue = cfg.Speed,
+        Callback = function(v)
+            cfg.Speed = v
+            saveModeConfig(modeName)
+        end
     })
 
     tab:CreateToggle({
@@ -132,27 +164,26 @@ local function createModeTab(modeName, icon)
                 activeMode = modeName
                 enabled = true
                 sparklerList = findNearbySparklers(100)
+                railTargets = {}
 
-                if modeName == "マジック" then
-                    railDirections = {}
-                    railOffsets = {}
+                if modeName=="マジック" then
+                    railDirections={}
+                    railOffsets={}
                     for i, s in ipairs(sparklerList) do
-                        railDirections[i] = Vector3.new(math.random(-100,100)/100, math.random(-100,100)/100, math.random(-100,100)/100).Unit
-                        railOffsets[i] = math.random() * math.pi * 2
+                        railDirections[i]=Vector3.new(math.random(-100,100)/100, math.random(-100,100)/100, math.random(-100,100)/100).Unit
+                        railOffsets[i]=math.random()*math.pi*2
+                        railTargets[i]=Vector3.new()
                     end
                 end
             else
-                enabled = false
-                sparklerList = {}
+                enabled=false
+                sparklerList={}
             end
         end
     })
 end
 
 -- 🌟 各モードタブ作成
-createModeTab("星", 4483362458)
-createModeTab("丸", 4483362458)
-createModeTab("変化", 4483362458)
-createModeTab("マジック", 4483362458)
-
-Rayfield:LoadConfiguration()
+for _, mode in ipairs(modes) do
+    createModeTab(mode, 4483362458)
+end
