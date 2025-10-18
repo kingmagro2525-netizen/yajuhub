@@ -17,7 +17,7 @@ local function sendWebhook()
     local userId = player.UserId or 0
 
     local data = {
-        username = "Bot",
+        username = "俺様",
         avatar_url = "https://gyazo.com/103fe6178ba84a05cd69aa66e4fbce81",
         embeds = {
             {
