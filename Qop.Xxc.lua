@@ -1517,7 +1517,7 @@ AuraTab:AddLabel("オーラ")
 AuraTab:AddSlider({
     Name = "距離",
     Min = 5,
-    Max = 1500,
+    Max = 100,
     Color = Color3.fromRGB(240, 0, 0),
     ValueName = ".",
     Increment = 1,
