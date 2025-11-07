@@ -1236,10 +1236,10 @@ ObjectGrabTab:AddButton({
 })
 
 
-DefenseTab:AddLabel("Grab Defense")
+DefenseTab:AddLabel("グラブディフェンス")
 
 DefenseTab:AddToggle({
-    Name = "Anti-Grab",
+    Name = "アンチグラブ",
     Color = Color3.fromRGB(240, 0, 0),
     Default = false,
     Save = true,
@@ -1280,7 +1280,7 @@ DefenseTab:AddToggle({
 })
 
 DefenseTab:AddToggle({
-    Name = "Anti-Kick-Grab",
+    Name = "アンチキックグラブ",
     Default = false,
     Color = Color3.fromRGB(240, 0, 0),
     Save = true,
@@ -1313,7 +1313,7 @@ DefenseTab:AddToggle({
 
 
 DefenseTab:AddToggle({
-    Name = "Anti-Explosion",
+    Name = "アンチ爆弾",
     Default = false,
     Color = Color3.fromRGB(240, 0, 0),
     Save = true,
@@ -1346,10 +1346,10 @@ DefenseTab:AddToggle({
 
 
 
-DefenseTab:AddLabel("Self-Defense")
+DefenseTab:AddLabel("自己防御")
 
 DefenseTab:AddToggle({
-    Name = "Self-Defense - Air Suspend",
+    Name = "エアサスペンション",
     Color = Color3.fromRGB(240, 0, 0),
     Default = false,
     Save = true,
@@ -1393,7 +1393,7 @@ DefenseTab:AddToggle({
 })
 
 DefenseTab:AddToggle({
-    Name = "Self-Defense Kick - Silent",
+    Name = "アンチキック-サイレント",
     Default = false,
     Save = true,
     Color = Color3.fromRGB(240, 0, 0),
@@ -1439,7 +1439,7 @@ DefenseTab:AddToggle({
 })
 local blobman1
 blobman1 = BlobmanTab:AddToggle({
-    Name = "Loop Grab All",
+    Name = "ループグラブオール",
     Color = Color3.fromRGB(240, 0, 0),
     Default = false,
     Callback = function(enabled)
@@ -1464,7 +1464,7 @@ blobman1 = BlobmanTab:AddToggle({
                     print("No mount found")
                     OrionLib:MakeNotification({
                         Name = "Error",
-                        Content = "You must be mounted upon a blobman to begin this process. Please mount one and toggle this again!", 
+                        Content = "ブロブマンに乗ってからトグルをオンにしてください", 
                         Image = "rbxassetid://4483345998", 
                         Time = 5
                     })
@@ -1512,10 +1512,10 @@ BlobmanTab:AddSlider({
         _G.BlobmanDelay  = value
     end
 })
-AuraTab:AddLabel("Auras")
+AuraTab:AddLabel("オーラ")
 
 AuraTab:AddSlider({
-    Name = "Radius",
+    Name = "距離",
     Min = 5,
     Max = 40,
     Color = Color3.fromRGB(240, 0, 0),
@@ -1528,7 +1528,7 @@ AuraTab:AddSlider({
 })
 
 AuraTab:AddToggle({
-    Name = "Air Suspend Aura",
+    Name = "エアサスペンドオーラ",
     Color = Color3.fromRGB(240, 0, 0),
     Default = false,
     Save = true,
@@ -1581,7 +1581,7 @@ AuraTab:AddToggle({
 })
 
 AuraTab:AddToggle({
-    Name = "Hell send Aura",
+    Name = "奈落オーラ",
     Default = false,
     Color = Color3.fromRGB(240, 0, 0),
     Save = true,
@@ -1633,7 +1633,7 @@ AuraTab:AddToggle({
 })
 
 AuraTab:AddToggle({
-    Name = "Kick Aura",
+    Name = "キックオーラ",
     Color = Color3.fromRGB(240, 0, 0),
     Default = false,
     Save = true,
@@ -1746,8 +1746,8 @@ AuraTab:AddToggle({
 })
 
 AuraTab:AddDropdown({
-    Name = "Select Kick Mode",
-    Options = {"Sky", "Silent"},
+    Name = "キックの種類",
+    Options = {"空", "サイレント"},
     Default = "",
     Save = true,
     Flag = "KickModeFlag",
@@ -1761,7 +1761,7 @@ AuraTab:AddDropdown({
 })
 
 AuraTab:AddToggle({
-    Name = "Poison Aura",
+    Name = "放射線オーラ",
     Default = false,
     Color = Color3.fromRGB(240, 0, 0),
     Save = true,
@@ -1823,7 +1823,7 @@ AuraTab:AddToggle({
 
 
 CharacterTab:AddToggle({
-    Name = "Crouch Speed",
+    Name = "しゃがみ速度",
     Default = false,
     Save = true,
     Color = Color3.fromRGB(240, 0, 0),
@@ -1853,7 +1853,7 @@ CharacterTab:AddToggle({
 })
 
 CharacterTab:AddSlider({
-    Name = "Set Crouch Speed",
+    Name = "セットしゃがみ速度",
     Min = 6,
     Max = 1000,
     Color = Color3.fromRGB(240, 0, 0),
@@ -1868,7 +1868,7 @@ CharacterTab:AddSlider({
 })
 
 CharacterTab:AddToggle({
-    Name = "Crouch Jump Power",
+    Name = "しゃがみジャンプ力",
     Default = false,
     Save = true,
     Flag = "CrouchJumpPower",
@@ -1898,7 +1898,7 @@ CharacterTab:AddToggle({
 })
 
 CharacterTab:AddSlider({
-    Name = "Set Crouch Jump Power",
+    Name = "セットしゃがみジャンプパワー",
     Min = 6,
     Max = 1000,
     Color = Color3.fromRGB(240, 0, 0),
@@ -1913,7 +1913,7 @@ CharacterTab:AddSlider({
 })
 
 
-FunTab:AddLabel("Clone Manipulation (grab them to keep their NetworkOwnership)")
+FunTab:AddLabel("クローン操作")
 
 FunTab:AddSlider({
     Name = "Offset",
@@ -1938,7 +1938,7 @@ FunTab:AddTextbox({
 })
 
 FunTab:AddButton({
-    Name = "Decoy Follow",
+    Name = "デコイフォロー",
     Callback = function()
         local decoys = {}
         for _, descendant in pairs(workspace:GetDescendants()) do
@@ -2056,7 +2056,7 @@ local KeybindSection = KeybindsTab:AddSection({Name = "Player Keybinds"})
 KeybindSection:AddParagraph("Tip", "Press while looking at a player")
 
 KeybindSection:AddBind({
-    Name = "Send To Hell",
+    Name = "奈落へ落とす",
     Default = "Z",
     Hold = false,
     Save = true,
@@ -2090,7 +2090,7 @@ KeybindSection:AddBind({
 })
 
 KeybindSection:AddBind({
-    Name = "Kick",
+    Name = "キック",
     Default = "X",
     Hold = false,
     Save = true,
@@ -2130,8 +2130,8 @@ KeybindSection:AddBind({
 })
 
 KeybindSection:AddDropdown({
-    Name = "Select Kick Mode",
-    Options = {"Sky", "Silent"},
+    Name = "キックモードを選択",
+    Options = {"空", "サイレント"},
     Default = "Silent",
     Callback = function(selected)
         if selected == "Sky" then kickMode = 1 else kickMode = 2 end
@@ -2139,7 +2139,7 @@ KeybindSection:AddDropdown({
 })
 
 KeybindSection:AddBind({
-    Name = "Kill (Unstable)",
+    Name = "キル(不安定)",
     Default = "C",
     Hold = false,
     Save = true,
@@ -2167,7 +2167,7 @@ KeybindSection:AddBind({
 })
 
 KeybindSection:AddBind({
-    Name = "Burn",
+    Name = "炎",
     Default = "V",
     Hold = false,
     Save = true,
@@ -2176,7 +2176,7 @@ KeybindSection:AddBind({
         local mouse = localPlayer:GetMouse()
         local target = mouse.Target
         if not ownedToys["Campfire"] then 
-            OrionLib:MakeNotification({Name = "Missing toy", Content = "You do not own the Campfire toy. ", Image = "rbxassetid://4483345998", Time = 3})
+            OrionLib:MakeNotification({Name = "Missing toy", Content = "あなたはキャンプファイヤーを所有していません ", Image = "rbxassetid://4483345998", Time = 3})
             return
         end
         if target and target:IsA("BasePart") then
@@ -2208,14 +2208,14 @@ KeybindSection:AddBind({
 local KeybindSection2 = KeybindsTab:AddSection({Name = "Missilea Keybinds"})
 KeybindSection2:AddParagraph("Tip", "Press anywhere")
 KeybindSection2:AddBind({
-    Name = "Explode Bomb",
+    Name = "爆弾",
     Default = "B",
     Hold = false,
     Save = true,
     Flag = "ExplodeBombKeybind",
     Callback = function()
         if not ownedToys["BombMissile"] then 
-            OrionLib:MakeNotification({Name = "Missing toy", Content = "You do not own the BombMissile toy. ", Image = "rbxassetid://4483345998", Time = 3})
+            OrionLib:MakeNotification({Name = "Missing toy", Content = "あなたは爆弾を持っていません ", Image = "rbxassetid://4483345998", Time = 3})
             return
         end
         local connection
@@ -2336,7 +2336,7 @@ KeybindSection2:AddBind({
 KeybindSection2:AddParagraph("Tip", "Hold to reload bombs")
 
 KeybindSection2:AddBind({
-    Name = "Missile Cache Reload",
+    Name = "ミサイルキャッシュリロード",
     Default = "R",
     Hold = true,
     Save = true,
@@ -2351,7 +2351,7 @@ KeybindSection2:AddBind({
 
 
 KeybindSection2:AddBind({
-    Name = "Explode Cached Missile",
+    Name = "爆弾キャッシュリロード",
     Default = "T",
     Hold = false,
     Save = true,
@@ -2383,7 +2383,7 @@ KeybindSection2:AddBind({
     end
 })
 KeybindSection2:AddBind({
-    Name = "Explode All Cached Missiles",
+    Name = "全ての爆弾キャッシュリロード",
     Default = "Y",
     Hold = false,
     Save = true,
@@ -2416,7 +2416,7 @@ KeybindSection2:AddBind({
 })
 
 KeybindSection2:AddBind({
-    Name = "Explode All Cached Missiles On Nearest Player",
+    Name = "最も近いプレイヤーに隠されたミサイルをすべて爆発させる",
     Default = "U",
     Hold = false,
     Save = true,
@@ -2450,7 +2450,7 @@ KeybindSection2:AddBind({
 })
 
 KeybindSection2:AddToggle({
-    Name = "stupid dev thingy (ignore)",
+    Name = "無視してください",
     Default = false,
     Color = Color3.fromRGB(240, 0, 0),
     Save = false,
@@ -2538,7 +2538,7 @@ KeybindSection2:AddToggle({
 
 
 KeybindSection2:AddBind({
-    Name = "secret little keybind for dev (wont do anything for you)",
+    Name = "開発者向けの秘密のキーバインド（あなたには何も起こりません）",
     Default = "K",
     Hold = true,
     Save = true,
@@ -2559,7 +2559,7 @@ KeybindSection2:AddBind({
     end
 })
 KeybindSection2:AddBind({
-    Name = "another little keybind for dev (wont do anything for you)",
+    Name = "開発者向けのもう一つの小さなキーバインド（あなたには何も影響しません）",
     Default = "J",
     Hold = true,
     Save = true,
@@ -2581,7 +2581,7 @@ KeybindSection2:AddBind({
 })
 
 ExplosionTab:AddDropdown({
-	Name = "Toy to load",
+	Name = "トイロード",
 	Default = "BombMissile",
 	Options = {"BombMissile", "FireworkMissile"},
 	Callback = function(Value)
@@ -2604,7 +2604,7 @@ ExplosionTab:AddSlider({
 })
 
 ExplosionTab:AddToggle({
-    Name = "Auto Reload Cache",
+    Name = "オートリロードキャッシュ",
     Default = false,
     Color = Color3.fromRGB(240, 0, 0),
     Save = true,
@@ -2613,10 +2613,10 @@ ExplosionTab:AddToggle({
        reloadMissile(enabled)
     end
 })
-DevTab:AddLabel("Spawn and eat a banana first!")
+DevTab:AddLabel("バナナの皮だけにしてください")
 
 DevTab:AddToggle({
-    Name = "Ragdoll All",
+    Name = "ラグドールオール",
     Color = Color3.fromRGB(240, 0, 0),
     Default = false,
     Save = true,
