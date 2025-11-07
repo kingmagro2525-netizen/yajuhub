@@ -901,9 +901,10 @@ for _, v in pairs(whitelistIds) do
     end
 end
 
-local localVersion = "8.2-stable"
+local localVersion = "バージョン1"
 if localVersion ~= version then
-    
+
+OrionLib:MakeNotification({Name = "Script version mismatch!", Content = "あなたは野獣のおちんちんハブの古いバージョンを使っているため開けません", Image = "rbxassetid:// 4483345998", Time = 8})    
     setclipboard('loadstring(game:HttpGet("https://raw.githubusercontent.com/Undebolted/FTAP/main/Script.lua",true))()')
     wait(12)
     OrionLib:Destroy()
@@ -2632,5 +2633,5 @@ DevTab:AddToggle({
     end
 })
 
-OrionLib:MakeNotification({Name = "Welcome", Content = "Welcome to RageByte", Image = "rbxassetid://4483345998", Time = 5})
+OrionLib:MakeNotification({Name = "Welcome", Content = "ようこそ、野獣のおちんちんハブへ", Image = "rbxassetid://4483345998", Time = 5})
 OrionLib:Init()
