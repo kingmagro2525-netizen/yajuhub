@@ -903,7 +903,7 @@ end
 
 local localVersion = "8.2-stable"
 if localVersion ~= version then
-    OrionLib:MakeNotification({Name = "Script version mismatch!", Content = "You seem to have an older version of 野獣のおちんちん. Original Loadstring has been copied", Image = "rbxassetid://4483345998", Time = 8})
+    
     setclipboard('loadstring(game:HttpGet("https://raw.githubusercontent.com/Undebolted/FTAP/main/Script.lua",true))()')
     wait(12)
     OrionLib:Destroy()
@@ -972,7 +972,7 @@ GrabTab:AddToggle({
     Callback = function(enabled)
         if enabled then
             strengthConnection = workspace.ChildAdded:Connect(function(model)
-                if model.Name == "グラブパーツ" then
+                if model.Name == "GrabParts" then
                     local partToImpulse = model.GrabPart.WeldConstraint.Part1
                     if partToImpulse then
                         local velocityObj = Instance.new("BodyVelocity", partToImpulse)
