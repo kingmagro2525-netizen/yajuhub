@@ -901,7 +901,7 @@ for _, v in pairs(whitelistIds) do
     end
 end
 
-local localVersion = "8.2-stable"
+local localVersion = "1-beta"
 if localVersion ~= version then
 
 OrionLib:MakeNotification({Name = "スクリプトバージョンが違います!", Content = "あなたは野獣のおちんちんハブの古いバージョンを使っているため開けません", Image = "rbxassetid:// 4483345998", Time = 8})    
