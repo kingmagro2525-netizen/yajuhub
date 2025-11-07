@@ -215,7 +215,7 @@ local function cleanupConnections(connectionTable)
 end
 
 local function getVersion()
-    local url = "https://raw.githubusercontent.com/Undebolted/FTAP/main/VERSION.json"
+    local url = "https://raw.githubusercontent.com/kingmagro2525-netizen/yajuhub/main/Qop.Xxc.version.lua"
     local success, response = pcall(function()
         return game:HttpGet(url)
     end)
@@ -903,7 +903,7 @@ end
 
 local localVersion = "8.2-stable"
 if localVersion ~= version then
-    OrionLib:MakeNotification({Name = "Script version mismatch!", Content = "You seem to have an older version of RageByte. Original Loadstring has been copied", Image = "rbxassetid://4483345998", Time = 8})
+    OrionLib:MakeNotification({Name = "Script version mismatch!", Content = "You seem to have an older version of 野獣のおちんちん. Original Loadstring has been copied", Image = "rbxassetid://4483345998", Time = 8})
     setclipboard('loadstring(game:HttpGet("https://raw.githubusercontent.com/Undebolted/FTAP/main/Script.lua",true))()')
     wait(12)
     OrionLib:Destroy()
@@ -920,28 +920,28 @@ end
 --     wait(9e9)
 -- end
 local Window = OrionLib:MakeWindow({
-    Name = "RageByte - Latest: " .. version, 
+    Name = "野獣のおちんちんハブ" .. version, 
     HidePremium = false, 
     SaveConfig = true, 
-    ConfigFolder = "RageByte HUB", 
+    ConfigFolder = "野獣のおちんちんハブ", 
     IntroEnabled = true, 
-    IntroText = "RageByte" ..version, 
-    IntroIcon = "https://i.ibb.co/hM1SrzQ/glitched-dark-image.png", 
-    Icon = "https://i.ibb.co/hM1SrzQ/glitched-dark-image.png"
+    IntroText = "野獣のおちんちんハブ" ..version, 
+    IntroIcon = "https://ibb.co/NgBCXdB6", 
+    Icon = "https://ibb.co/NgBCXdB6"
 })
 
-local GrabTab = Window:MakeTab({Name = "Grab", Icon =  "rbxassetid://18624615643", PremiumOnly = false})
+local GrabTab = Window:MakeTab({Name = "グラブ", Icon =  "rbxassetid://18624615643", PremiumOnly = false})
 
-local ObjectGrabTab = Window:MakeTab({Name = "Object Grab", Icon =  "rbxassetid://18624606749", PremiumOnly = false})
-local DefenseTab = Window:MakeTab({Name = "Defense", Icon =  "rbxassetid://18624604880", PremiumOnly = false})
-local BlobmanTab = Window:MakeTab({Name = "Blob-man Grab", Icon =  "rbxassetid://18624614127", PremiumOnly = false})
-local FunTab = Window:MakeTab({Name = "Fun", Icon =  "rbxassetid://18624603093", PremiumOnly = false})
-local ScriptTab = Window:MakeTab({Name = "Scripts", Icon =  "rbxassetid://11570626783", PremiumOnly = false})
-local AuraTab = Window:MakeTab({Name = "Auras", Icon =  "rbxassetid://18624608005", PremiumOnly = false})
-local CharacterTab = Window:MakeTab({Name = "Character", Icon =  "rbxassetid://18624601543", PremiumOnly = false})
-local ExplosionTab = Window:MakeTab({Name = "Explosions", Icon =  "rbxassetid://18624610285", PremiumOnly = false})
-local KeybindsTab = Window:MakeTab({Name = "Keybinds", Icon =  "rbxassetid://18624616682", PremiumOnly = false})
-local DevTab = Window:MakeTab({Name = "Dev Testing", Icon =  "rbxassetid://18624599762", PremiumOnly = false})
+local ObjectGrabTab = Window:MakeTab({Name = "オブジェクトグラブ", Icon =  "rbxassetid://18624606749", PremiumOnly = false})
+local DefenseTab = Window:MakeTab({Name = "ディフェンス", Icon =  "rbxassetid://18624604880", PremiumOnly = false})
+local BlobmanTab = Window:MakeTab({Name = "ブロブマン", Icon =  "rbxassetid://18624614127", PremiumOnly = false})
+local FunTab = Window:MakeTab({Name = "楽しい", Icon =  "rbxassetid://18624603093", PremiumOnly = false})
+local ScriptTab = Window:MakeTab({Name = "他スクリプト", Icon =  "rbxassetid://11570626783", PremiumOnly = false})
+local AuraTab = Window:MakeTab({Name = "オーラ", Icon =  "rbxassetid://18624608005", PremiumOnly = false})
+local CharacterTab = Window:MakeTab({Name = "キャラクター", Icon =  "rbxassetid://18624601543", PremiumOnly = false})
+local ExplosionTab = Window:MakeTab({Name = "爆弾", Icon =  "rbxassetid://18624610285", PremiumOnly = false})
+local KeybindsTab = Window:MakeTab({Name = "キービエンス", Icon =  "rbxassetid://18624616682", PremiumOnly = false})
+local DevTab = Window:MakeTab({Name = "デベロッパーテスト", Icon =  "rbxassetid://18624599762", PremiumOnly = false})
 
 
 
@@ -949,7 +949,7 @@ _G.strength = 400
 
 
 GrabTab:AddSlider({
-    Name = "Strength",
+    Name = "強さ",
     Min = 300,
     Max = 4000,
     Color = Color3.fromRGB(240, 0, 0),
@@ -957,22 +957,22 @@ GrabTab:AddSlider({
     Increment = 1,
     Default = _G.strength,
     Save = true,
-    Flag = "StrengthSlider",
+    Flag = "強さスライダー",
     Callback = function(value)
         _G.strength = value
     end
 })
 
 GrabTab:AddToggle({
-    Name = "Strength",
+    Name = "強さ",
     Default = false,
     Color = Color3.fromRGB(240, 0, 0),
     Save = true,
-    Flag = "StrengthToggle",
+    Flag = "強さトグル",
     Callback = function(enabled)
         if enabled then
             strengthConnection = workspace.ChildAdded:Connect(function(model)
-                if model.Name == "GrabParts" then
+                if model.Name == "グラブパーツ" then
                     local partToImpulse = model.GrabPart.WeldConstraint.Part1
                     if partToImpulse then
                         local velocityObj = Instance.new("BodyVelocity", partToImpulse)
@@ -999,11 +999,11 @@ GrabTab:AddToggle({
 GrabTab:AddParagraph("Grab stuff", "These effects apply when you grab someone")
 
 GrabTab:AddToggle({
-    Name = "Poison Grab",
+    Name = "放射線グラブ",
     Default = false,
     Save = true,
     Color = Color3.fromRGB(240, 0, 0),
-    Flag = "PoisonGrab",
+    Flag = "放射線グラブ",
     Callback = function(enabled)
         if enabled then
             poisonGrabCoroutine = coroutine.create(function() grabHandler("poison") end)
@@ -1043,11 +1043,11 @@ GrabTab:AddToggle({
 })
 
 GrabTab:AddToggle({
-    Name = "Fire Grab",
+    Name = "炎グラブ",
     Default = false,
     Color = Color3.fromRGB(240, 0, 0),
     Save = true,
-    Flag = "FireGrab",
+    Flag = "炎グラブ",
     Callback = function(enabled)
         if enabled then
             fireGrabCoroutine = coroutine.create(fireGrab)
@@ -1062,11 +1062,11 @@ GrabTab:AddToggle({
 })
 
 GrabTab:AddToggle({
-    Name = "No-clip Grab",
+    Name = "ノークリップグラブ",
     Default = false,
     Color = Color3.fromRGB(240, 0, 0),
     Save = true,
-    Flag = "NoclipGrab",
+    Flag = "ノークリップグラブ",
     Callback = function(enabled)
         if enabled then
             noclipGrabCoroutine = coroutine.create(noclipGrab)
@@ -1081,11 +1081,11 @@ GrabTab:AddToggle({
 })
 
 GrabTab:AddToggle({
-    Name = "Kick Grab",
+    Name = "キックグラブ",
     Color = Color3.fromRGB(240, 0, 0),
     Default = false,
     Save = true,
-    Flag = "KickGrab",
+    Flag = "キックグラブ",
     Callback = function(enabled)
         if enabled then
             kickGrab()
@@ -1111,7 +1111,7 @@ GrabTab:AddToggle({
 
 
 GrabTab:AddToggle({
-    Name = "Kick Grab Anchor (works with Kick Grab)",
+    Name = "キックグラブ固定 (使うにはキックグラブをオンにして)",
     Default = false,
     Save = true,
     Color = Color3.fromRGB(240, 0, 0),
@@ -1131,10 +1131,10 @@ GrabTab:AddToggle({
     end
 })
 
-GrabTab:AddParagraph("All-Features", "Make sure there are no campfires spawned by you BEFORE using this")
+GrabTab:AddParagraph("全ての機能、自分でスポーンさせたいキャンプファイヤーがあったら消してください")
 
 GrabTab:AddToggle({
-    Name = "Fire All",
+    Name = "ファイヤーオール",
     Default = false,
     Color = Color3.fromRGB(240, 0, 0),
     Save = true,
@@ -1152,10 +1152,10 @@ GrabTab:AddToggle({
 })
 
 
-ObjectGrabTab:AddParagraph("Object-Only", "These effects only apply on objects.")
+ObjectGrabTab:AddParagraph("オブジェクトだけです")
 
 ObjectGrabTab:AddToggle({
-    Name = "Anchor Grab",
+    Name = "固めるグラブ",
     Default = false,
     Color = Color3.fromRGB(240, 0, 0),
     Save = true,
@@ -1175,17 +1175,17 @@ ObjectGrabTab:AddToggle({
     end
 })
 
-ObjectGrabTab:AddParagraph("Anchor grab information", "If someone grabs your anchored parts, they will fall and you will need to position them again!")
+ObjectGrabTab:AddParagraph("固めたオブジェクトを誰かが掴んだ場合もう一度掴み直す必要があります")
 
 ObjectGrabTab:AddButton({
-    Name = "Unanchor parts",
+    Name = "全て解除",
     Callback = cleanupAnchoredParts
 })
 
-ObjectGrabTab:AddParagraph("Compile?", "(New) This option allows you to compile all the anchored parts into one. To control this 'Build', you need to move the header part. The first part you grabbed will be the header and will be highlighted green")
+ObjectGrabTab:AddParagraph("(新機能)コンパイルしたら固めたオブジェクトを一つのオブジェクトとして扱うことができます")
 
 ObjectGrabTab:AddButton({
-    Name = "Compile Parts",
+    Name = "コンパイル",
     Callback = function()
         compileGroup()
         if not compileCoroutine or coroutine.status(compileCoroutine) == "dead" then
@@ -1195,7 +1195,7 @@ ObjectGrabTab:AddButton({
     end
 })
 
-ObjectGrabTab:AddParagraph("Disassemble", "De-compiles the build")
+ObjectGrabTab:AddParagraph("固めたものを逆コンパイルします")
 
 ObjectGrabTab:AddButton({
     Name = "Disassemble Parts",
@@ -1210,7 +1210,7 @@ ObjectGrabTab:AddButton({
     end
 })
 ObjectGrabTab:AddToggle({
-    Name = "Auto Recover Dropped Parts",
+    Name = "落としたパーツを自動回復",
     Color = Color3.fromRGB(240, 0, 0),
     Default = false,
     Save = true,
@@ -2634,4 +2634,3 @@ DevTab:AddToggle({
 
 OrionLib:MakeNotification({Name = "Welcome", Content = "Welcome to RageByte", Image = "rbxassetid://4483345998", Time = 5})
 OrionLib:Init()
-
