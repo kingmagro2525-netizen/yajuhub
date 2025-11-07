@@ -1439,6 +1439,177 @@ DefenseTab:AddToggle({
 })
 local blobman1
 blobman1 = BlobmanTab:AddToggle({
+-- ブロブマンの超高速投げ飛ばしモード
+-- 元のblobGrabPlayer関数とトグル部分を置き換えてください
+
+local blobalter = 1
+local blobman = nil
+local blobmanCoroutine = nil
+local yeetMode = false  -- 新機能: 投げ飛ばしモード
+
+-- 改良版: 高速投げ飛ばし機能付き
+local function blobGrabPlayerYeet(player, blobman)
+if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+return
+end
+
+-- 左右交互にグラブ
+local detector, weld
+if blobalter == 1 then
+    detector = blobman:FindFirstChild("LeftDetector")
+    weld = detector and detector:FindFirstChild("LeftWeld")
+    blobalter = 2
+else
+    detector = blobman:FindFirstChild("RightDetector")
+    weld = detector and detector:FindFirstChild("RightWeld")
+    blobalter = 1
+end
+
+if not detector or not weld then return end
+
+-- グラブ実行
+local args = {
+    [1] = detector,
+    [2] = player.Character.HumanoidRootPart,
+    [3] = weld
+}
+blobman:WaitForChild("BlobmanSeatAndOwnerScript"):WaitForChild("CreatureGrab"):FireServer(unpack(args))
+
+-- Yeetモード: 即座にリリースして飛ばす
+if yeetMode then
+    wait(0.05)  -- 短い待機でグラブを確認
+    -- リリース（もう一度同じ場所をグラブしようとすると自動リリースされる）
+    local releaseArgs = {
+        [1] = detector,
+        [2] = player.Character.HumanoidRootPart,
+        [3] = weld
+    }
+    blobman:WaitForChild("BlobmanSeatAndOwnerScript"):WaitForChild("CreatureGrab"):FireServer(unpack(releaseArgs))
+end
+
+end
+
+-- ブロブマンタブのトグル（これを元のコードに置き換え）
+local blobman1
+blobman1 = BlobmanTab:AddToggle({
+Name = "ループグラブオール",
+Color = Color3.fromRGB(240, 0, 0),
+Default = false,
+Callback = function(enabled)
+if enabled then
+print("Toggle enabled")
+blobmanCoroutine = coroutine.create(function()
+local foundBlobman = false
+
+            -- ブロブマン検索
+            for i, v in pairs(game.Workspace:GetDescendants()) do
+                if v.Name == "CreatureBlobman" then
+                    print("Found CreatureBlobman")
+                    if v:FindFirstChild("VehicleSeat") and 
+                       v.VehicleSeat:FindFirstChild("SeatWeld") and 
+                       isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
+                        print("Mounted on blobman")
+                        blobman = v
+                        foundBlobman = true
+                        break
+                    end
+                end
+            end
+            
+            if not foundBlobman then
+                print("No mount found")
+                OrionLib:MakeNotification({
+                    Name = "Error",
+                    Content = "ブロブマンに乗ってからトグルをオンにしてください", 
+                    Image = "rbxassetid://4483345998", 
+                    Time = 5
+                })
+                blobman1:Set(false)
+                blobman = nil
+                return
+            end
+
+            -- メインループ
+            while true do
+                pcall(function()
+                    for i, v in pairs(Players:GetChildren()) do
+                        if blobman and v ~= localPlayer then
+                            blobGrabPlayerYeet(v, blobman)
+                            print(v.Name)
+                            wait(_G.BlobmanDelay)
+                        end
+                    end
+                end)
+                wait(0.02)
+            end
+        end)
+        coroutine.resume(blobmanCoroutine)
+    else
+        if blobmanCoroutine then
+            coroutine.close(blobmanCoroutine)
+            blobmanCoroutine = nil
+            blobman = nil
+        end
+    end
+end
+})
+
+-- 新機能: Yeetモードトグル
+BlobmanTab:AddToggle({
+Name = "投げ飛ばしモード (Yeet Mode)",
+Color = Color3.fromRGB(255, 100, 0),
+Default = false,
+Callback = function(enabled)
+yeetMode = enabled
+if enabled then
+OrionLib:MakeNotification({
+Name = "Yeet Mode ON",
+Content = "相手を超高速で投げ飛ばします！",
+Image = "rbxassetid://4483345998",
+Time = 3
+})
+end
+end
+})
+
+-- 遅延スライダー（Yeetモード用に調整）
+BlobmanTab:AddSlider({
+Name = "Delay (投げ飛ばし速度)",
+Min = 0.001,
+Max = 0.5,
+Color = Color3.fromRGB(240, 0, 0),
+ValueName = "秒",
+Increment = 0.001,
+Default = 0.05,
+Callback = function(value)
+_G.BlobmanDelay = value
+end
+})
+
+-- さらに強力な投げ飛ばしモード
+BlobmanTab:AddToggle({
+Name = "超加速モード (極限)",
+Color = Color3.fromRGB(255, 0, 0),
+Default = false,
+Callback = function(enabled)
+if enabled then
+_G.BlobmanDelay = 0.001  -- 最速
+yeetMode = true
+OrionLib:MakeNotification({
+Name = "⚠️ 超加速モード",
+Content = "警告: 最速でプレイヤーを投げ飛ばします！",
+Image = "rbxassetid://4483345998",
+Time = 3
+})
+else
+_G.BlobmanDelay = 0.05
+yeetMode = false
+end
+end
+})
+
+BlobmanTab:AddParagraph("使い方", "1. ブロブマンに乗る\n2. ループグラブオールをON\n3. 投げ飛ばしモードをONにすると相手がめちゃくちゃ飛びます")
+BlobmanTab:AddToggle({
     Name = "ループグラブオール",
     Color = Color3.fromRGB(240, 0, 0),
     Default = false,
