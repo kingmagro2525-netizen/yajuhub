@@ -1502,7 +1502,7 @@ blobman1 = BlobmanTab:AddToggle({
 })
 BlobmanTab:AddSlider({
     Name = "Delay",
-    Min = 0.0005,
+    Min = 0.0001,
     Max = 1,
     Color = Color3.fromRGB(240, 0, 0),
     ValueName = ".",
@@ -1517,7 +1517,7 @@ AuraTab:AddLabel("オーラ")
 AuraTab:AddSlider({
     Name = "距離",
     Min = 5,
-    Max = 40,
+    Max = 1500,
     Color = Color3.fromRGB(240, 0, 0),
     ValueName = ".",
     Increment = 1,
