@@ -92,38 +92,68 @@ local lightbitradius = 20
 local usingradius = lightbitradius
 
 local OrionLib = loadstring(game:HttpGet(("https://raw.githubusercontent.com/yua20170313a-pixel/Orion/e19e8236bde46c459fb0d617e4640aeb75878703/source")))()
+
+-- 🛠️ ユーティリティ関数の定義をここに追加 🛠️
+
+local function isDescendantOf(target, other)
+    local currentParent = target.Parent
+    while currentParent do
+        if currentParent == other then
+            return true
+        end
+        currentParent = currentParent.Parent
+    end
+    return false
+end
+
+local function findFirstAncestorOfType(instance, className)
+    local current = instance.Parent
+    while current and not current:IsA(className) do
+        current = current.Parent
+    end
+    return current
+end
+
+local function findDescendant(parent, name, className)
+    for _, descendant in ipairs(parent:GetDescendants()) do
+        if (not name or descendant.Name == name) and (not className or descendant:IsA(className)) then
+            return descendant
+        end
+    end
+    return nil
+end
+
+local function getSurroundingVectors(targetPosition, radius, amount, offset)
+    local vectors = {}
+    local angleStep = (2 * math.pi) / amount
+    for i = 1, amount do
+        local angle = (i - 1) * angleStep + offset
+        local x = targetPosition.X + radius * math.cos(angle)
+        local z = targetPosition.Z + radius * math.sin(angle)
+        -- Y座標はターゲットの中心に合わせる
+        table.insert(vectors, Vector3.new(x, targetPosition.Y, z))
+    end
+    return vectors
+end
+
+-- 🛠️ ユーティリティ関数の定義ここまで 🛠️
+
 --[[
     Utilities.IsDescendantOf(child, parent)
-
     Utilities.GetDescendant(parent, name, className)
-
     Utilities.GetAncestor(child, name, className)
-
     Utilities.FindFirstAncestorOfType(child, className)
-
     Utilities.GetChildrenByType(parent, className)
-
     Utilities.GetDescendantsByType(parent, className)
-
     Utilities.HasAttribute(instance, attributeName)
-
     Utilities.GetAttributeOrDefault(instance, attributeName, defaultValue)
-
     Utilities.CloneInstance(instance, newParent)
-    
     Utilities.WaitForChildOfType(parent, className, timeout)
-
     Utilities.IsPointInPart(part, point)
-
     Utilities.GetDistance(pointA, pointB)
-
     Utilities.GetAngleBetweenVectors(vectorA, vectorB)
-
     Utilities.RotateVectorY(vector, angle)
-
     Utilities.GetSurroundingVectors(target, radius, amount, offset)
-
-
 --]]
 local followMode = true
 local toysFolder = workspace:FindFirstChild(localPlayer.Name.."SpawnedInToys")
@@ -138,17 +168,6 @@ _G.MaxMissiles = 9
 _G.BlobmanDelay = 0.005
 
 
-
-local function isDescendantOf(target, other)
-    local currentParent = target.Parent
-    while currentParent do
-        if currentParent == other then
-            return true
-        end
-        currentParent = currentParent.Parent
-    end
-    return false
-end
 local function DestroyT(toy)
     local toy = toy or toysFolder:FindFirstChildWhichIsA("Model")
     DestroyToy:FireServer(toy)
@@ -485,7 +504,10 @@ end
 
 local function onPartOwnerAdded(descendant, primaryPart)
     if descendant.Name == "PartOwner" and descendant.Value ~= localPlayer.Name then
-        local highlight = primaryPart:FindFirstChild("Highlight") or U.GetDescendant(U.FindFirstAncestorOfType(primaryPart, "Model"), "Highlight", "Highlight")
+        -- 💡 U.GetDescendant(U.FindFirstAncestorOfType(primaryPart, "Model"), "Highlight", "Highlight") の修正
+        local modelAncestor = findFirstAncestorOfType(primaryPart, "Model")
+        local highlight = primaryPart:FindFirstChild("Highlight") or (modelAncestor and findDescendant(modelAncestor, "Highlight", "Highlight"))
+        
         if highlight then
             if descendant.Value ~= localPlayer.Name then
                 highlight.OutlineColor = Color3.new(1, 0, 0)
@@ -540,10 +562,14 @@ local function anchorGrab()
                 end
 
             end
+            
+            -- 💡 U.FindFirstAncestorOfType の修正
+            local modelAncestor = findFirstAncestorOfType(primaryPart, "Model")
+
             if t and not table.find(anchoredParts, primaryPart) then
                 local target 
-                if U.FindFirstAncestorOfType(primaryPart, "Model") and U.FindFirstAncestorOfType(primaryPart, "Model") ~= workspace then
-                    target = U.FindFirstAncestorOfType(primaryPart, "Model")
+                if modelAncestor and modelAncestor ~= workspace then
+                    target = modelAncestor
                 else
                     target = primaryPart
                 end
@@ -558,9 +584,9 @@ local function anchorGrab()
                 table.insert(anchoredConnections, connection)
             end
 
-            
-            if U.FindFirstAncestorOfType(primaryPart, "Model") and U.FindFirstAncestorOfType(primaryPart, "Model") ~= workspace then 
-                for _, child in ipairs(U.FindFirstAncestorOfType(primaryPart, "Model"):GetDescendants()) do
+            -- 💡 U.FindFirstAncestorOfType の修正
+            if modelAncestor and modelAncestor ~= workspace then 
+                for _, child in ipairs(modelAncestor:GetDescendants()) do
                     if child:IsA("BodyPosition") or child:IsA("BodyGyro") then
                         child:Destroy()
                     end
@@ -663,7 +689,9 @@ local function compileGroup()
 
     local highlight =  primaryPart:FindFirstChild("Highlight") or primaryPart.Parent:FindFirstChild("Highlight")
     if not highlight then
-        highlight = createHighlight(primaryPart.Parent:IsA("Model") and primaryPart.Parent or primaryPart)
+        -- 💡 U.FindFirstAncestorOfType の修正
+        local targetParent = findFirstAncestorOfType(primaryPart, "Model") or primaryPart
+        highlight = createHighlight(targetParent)
     end
     highlight.OutlineColor = Color3.new(0, 1, 0) 
     
@@ -2815,7 +2843,8 @@ KeybindSection2:AddToggle({
 			lightorbitcon = RunService.Heartbeat:Connect(function()
 				if not localPlayer.Character or not localPlayer.Character.HumanoidRootPart then return end
 				lightbitoffset = lightbitoffset + lightbit
-				lightbitpos = U.GetSurroundingVectors(localPlayer.Character.HumanoidRootPart.Position, usingradius, #lightbitparts, lightbitoffset)
+                -- 💡 U.GetSurroundingVectors の修正
+				lightbitpos = getSurroundingVectors(localPlayer.Character.HumanoidRootPart.Position, usingradius, #lightbitparts, lightbitoffset)
 
 				for i, v in ipairs(lightbitpos) do
 					bodyPositions[i].Position = v
