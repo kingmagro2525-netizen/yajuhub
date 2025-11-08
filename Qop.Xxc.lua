@@ -921,7 +921,7 @@ local function reloadMissile(bool)
     end
 end
 
--- 😈 ブロブマン自動スポーン/キャッシュ関数
+-- 😈 ブロブマン自動スポーン/キャッシュ関数 (修正済み)
 local function reloadBlobman(bool)
     if bool then
         if not ownedToys[_G.BlobmanToyName] then
@@ -1027,6 +1027,7 @@ local function reloadBlobman(bool)
     end
 end
 -- 😈 /ブロブマン自動スポーン/キャッシュ関数
+
 local function setupAntiExplosion(character)
     local partOwner = character:WaitForChild("Humanoid"):FindFirstChild("Ragdolled")
     if partOwner then
@@ -1755,7 +1756,6 @@ BlobmanTab:AddToggle({
     Name = "Auto Sit",
     Desc = "オンにすると、ブロブマンを召喚したとき、または降りた後に自動的に座ります。",
     Type = "Toggle",
-    State = AutoSitEnabled,
     Default = false,
     Color = Color3.fromRGB(240, 0, 0),
     Save = true,
@@ -2978,7 +2978,7 @@ DevTab:AddToggle({
     end
 })
 
--- 😈 自動着席ロジックをHeartbeatから切り離す
+-- 😈 自動着席ロジックをHeartbeatから切り離す (修正済み)
 -- プレイヤーが座席から降りたときのイベントを監視
 localPlayer.CharacterAdded:Connect(function(character)
     if character:FindFirstChildOfClass("Humanoid") then
@@ -2990,7 +2990,7 @@ localPlayer.CharacterAdded:Connect(function(character)
                 -- ブロブマンを探す (特にキャッシュリストから)
                 local targetBlobman = nil
                 for _, b in ipairs(blobmanList) do
-                    if b:FindFirstChild("VehicleSeat") then
+                    if b and b:FindFirstChild("VehicleSeat") then
                         targetBlobman = b
                         break
                     end
