@@ -69,6 +69,11 @@ local alignOrientations = {}
 
 -- 😈 新しいグローバル変数の追加
 local AutoSitEnabled = false
+local reloadBlobmanCoroutine -- ブロブマン自動スポーン用コルーチン
+local connectionBlobmanReload -- ブロブマン自動スポーンの接続
+local blobmanList = {} -- スポーンしたブロブマンのキャッシュリスト
+_G.MaxBlobmen = 1 -- 最大ブロブマン数
+_G.BlobmanToyName = "CreatureBlobman" -- ブロブマンのトイ名
 
 local decoyOffset = 15
 local stopDistance = 5
@@ -775,7 +780,7 @@ local function reloadMissile(bool)
                                     end
                                 end
                             end)
-                            Debris:AddItem(connectio, 60)
+                            Debris:AddItem(connection, 60)
                             if waiting and waiting.Value == localPlayer.Name then
                                 for _, v in pairs(child:GetChildren()) do
                                     if v:IsA("BasePart") then
@@ -827,6 +832,113 @@ local function reloadMissile(bool)
         end
     end
 end
+
+-- 😈 ブロブマン自動スポーン/キャッシュ関数
+local function reloadBlobman(bool)
+    if bool then
+        if not ownedToys[_G.BlobmanToyName] then
+            OrionLib:MakeNotification({
+                Name = "Missing toy",
+                Content = "You do not own the ".._G.BlobmanToyName.." toy.",
+                Image = "rbxassetid://4483345998",
+                Time = 3
+            })
+            return
+        end
+
+        if not reloadBlobmanCoroutine then
+            reloadBlobmanCoroutine = coroutine.create(function()
+                connectionBlobmanReload = toysFolder.ChildAdded:Connect(function(child)
+                    if child.Name == _G.BlobmanToyName and child:WaitForChild("ThisToysNumber", 1) then
+                        if child.ThisToysNumber.Value == (toysFolder.ToyNumber.Value - 1) then
+                            local connection2
+                            connection2 = toysFolder.ChildRemoved:Connect(function(child2)
+                                if child2 == child then
+                                    connection2:Disconnect()
+                                end
+                            end)
+
+                            -- ブロブマンのBodyパーツを探してNetworkOwnerを設定する
+                            local bodyPart = child:FindFirstChild("Body") or child.PrimaryPart
+                            if bodyPart then
+                                SetNetworkOwner:FireServer(bodyPart, bodyPart.CFrame)
+                            end
+                            
+                            local waiting = bodyPart and bodyPart:WaitForChild("PartOwner", 0.5)
+                            
+                            local connection = child.DescendantAdded:Connect(function(descendant)
+                                if descendant.Name == "PartOwner" then
+                                    if descendant.Value ~= localPlayer.Name then
+                                        DestroyT(child)
+                                        connection:Disconnect()
+                                    end
+                                end
+                            end)
+                            Debris:AddItem(connection, 60)
+                            
+                            if waiting and waiting.Value == localPlayer.Name then
+                                -- キャッシュ処理
+                                for _, v in pairs(child:GetChildren()) do
+                                    if v:IsA("BasePart") then
+                                        v.CanCollide = false
+                                    end
+                                end
+                                child:SetPrimaryPartCFrame(CFrame.new(-72.9304581, -3.96906614, -265.543732)) -- 見えない位置に移動
+                                wait(0.2)
+                                for _, v in pairs(child:GetChildren()) do
+                                    if v:IsA("BasePart") then
+                                        v.Anchored = true -- アンカーして静止させる
+                                    end
+                                end
+                                table.insert(blobmanList, child)
+                                
+                                -- 😈 オートシットのトリガー (スポーン時)
+                                if AutoSitEnabled then
+                                    local VehicleSeat = child:FindFirstChild("VehicleSeat")
+                                    if VehicleSeat and playerCharacter and playerCharacter.Humanoid and playerCharacter.Humanoid.SeatPart == nil then
+                                        VehicleSeat:Sit(playerCharacter.Humanoid)
+                                    end
+                                end
+                                
+                                child.AncestryChanged:Connect(function()
+                                    if not child.Parent then
+                                        for i, blobmanItem in ipairs(blobmanList) do
+                                            if blobmanItem == child then
+                                                table.remove(blobmanList, i)
+                                                break
+                                            end
+                                        end
+                                    end
+                                end)
+                                connection2:Disconnect()
+                            else
+                                DestroyT(child)
+                            end
+                        end
+                    end
+                end)
+
+                while true do
+                    -- 最大数より少なければスポーン
+                    if localPlayer.CanSpawnToy and localPlayer.CanSpawnToy.Value and #blobmanList < _G.MaxBlobmen and playerCharacter:FindFirstChild("Head") then
+                        spawnItemCf(_G.BlobmanToyName, playerCharacter.Head.CFrame or playerCharacter.HumanoidRootPart.CFrame)
+                    end
+                    RunService.Heartbeat:Wait()
+                end
+            end)
+            coroutine.resume(reloadBlobmanCoroutine)
+        end
+    else
+        if reloadBlobmanCoroutine then
+            coroutine.close(reloadBlobmanCoroutine)
+            reloadBlobmanCoroutine = nil
+        end
+        if connectionBlobmanReload then
+            connectionBlobmanReload:Disconnect()
+        end
+    end
+end
+-- 😈 /ブロブマン自動スポーン/キャッシュ関数
 local function setupAntiExplosion(character)
     local partOwner = character:WaitForChild("Humanoid"):FindFirstChild("Ragdolled")
     if partOwner then
@@ -1485,17 +1597,33 @@ blobman1 = BlobmanTab:AddToggle({
             blobmanCoroutine = coroutine.create(function()
                 local foundBlobman = false
                 
-                for i, v in pairs(game.Workspace:GetDescendants()) do
-                    if v.Name == "CreatureBlobman" then
-                        print("Found CreatureBlobman")
-                        if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
-                            print("Mounted on blobman")
-                            blobman = v
-                            foundBlobman = true
-                            break
+                -- キャッシュされたブロブマンリストから探す
+                local currentBlobman = nil
+                for _, b in ipairs(blobmanList) do
+                    local seat = b:FindFirstChild("VehicleSeat")
+                    if seat and seat.Occupant and isDescendantOf(seat.Occupant.Parent, localPlayer.Character) then
+                        currentBlobman = b
+                        foundBlobman = true
+                        break
+                    end
+                end
+                
+                -- もし自動スポーンがオフなら、ワークスペース全体から探す
+                if not foundBlobman then
+                    for i, v in pairs(game.Workspace:GetDescendants()) do
+                        if v.Name == "CreatureBlobman" then
+                            print("Found CreatureBlobman")
+                            if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
+                                print("Mounted on blobman")
+                                currentBlobman = v
+                                foundBlobman = true
+                                break
+                            end
                         end
                     end
                 end
+                
+                blobman = currentBlobman -- グローバル変数に設定
                 
                 if not foundBlobman then
                     print("No mount found")
@@ -1534,7 +1662,7 @@ blobman1 = BlobmanTab:AddToggle({
     end
 })
 
--- 😈 自動着席トグルの追加
+-- 😈 自動着席トグルのロジック変更 (Heartbeatから切り離すため、状態の更新のみ)
 BlobmanTab:AddToggle({
     Name = "Auto Sit",
     Desc = "オンにすると、ブロブマンを召喚したとき、または降りた後に自動的に座ります。",
@@ -1548,7 +1676,35 @@ BlobmanTab:AddToggle({
         AutoSitEnabled = State
     end
 })
+-- /自動着席トグルのロジック変更
 
+-- 😈 ブロブマン自動スポーンのUI要素を追加
+BlobmanTab:AddToggle({
+    Name = "ブロブマン自動スポーン",
+    Default = false,
+    Color = Color3.fromRGB(0, 240, 0),
+    Save = true,
+    Flag = "AutoReloadBlobman",
+    Callback = function(enabled)
+       reloadBlobman(enabled)
+    end
+})
+
+BlobmanTab:AddSlider({
+    Name = "Max amount of Blobmen",
+    Min = 1,
+    Max = localPlayer.ToysLimitCap.Value / 10,
+    Color = Color3.fromRGB(240, 0, 0),
+    ValueName = "Blobmen",
+    Increment = 1,
+    Default = _G.MaxBlobmen,
+    Save = true,
+    Flag = "NaxBlobmenSlider",
+    Callback = function(value)
+        _G.MaxBlobmen = value
+    end
+})
+-- /ブロブマン自動スポーンのUI要素を追加
 
 BlobmanTab:AddToggle({
     Name = "投げ飛ばしモード (Yeet Mode)",
@@ -2264,12 +2420,12 @@ KeybindSection:AddBind({
     Save = true,
     Flag = "BurnKeybind",
     Callback = function()
-        local mouse = localPlayer:GetMouse()
-        local target = mouse.Target
         if not ownedToys["Campfire"] then 
             OrionLib:MakeNotification({Name = "Missing toy", Content = "あなたはキャンプファイヤーを所有していません ", Image = "rbxassetid://4483345998", Time = 3})
             return
         end
+        local mouse = localPlayer:GetMouse()
+        local target = mouse.Target
         if target and target:IsA("BasePart") then
             local character = target.Parent
             if target.Name == "FirePlayerPart" then
@@ -2373,7 +2529,7 @@ KeybindSection2:AddBind({
                     end
                 end
             end
-        end)
+        })
         spawnItemCf("BombMissile", playerCharacter.Head.CFrame or playerCharacter.HumanoidRootPart.CFrame)
     end
 })
@@ -2418,7 +2574,7 @@ KeybindSection2:AddBind({
                     end
                 end
             end
-        end)
+        })
         spawnItemCf("FireworkMissile", playerCharacter.Head.CFrame or playerCharacter.HumanoidRootPart.CFrame)
         wait(1)
         connection:Disconnect()
@@ -2724,44 +2880,46 @@ DevTab:AddToggle({
     end
 })
 
--- 😈 Qop.Update関数に自動着席ロジックを追加
-local Qop = {} -- 既存のコードにQopテーブルが存在しない場合を想定（存在する場合はマージされる）
+-- 😈 自動着席ロジックをHeartbeatから切り離す
+-- プレイヤーが座席から降りたときのイベントを監視
+localPlayer.CharacterAdded:Connect(function(character)
+    if character:FindFirstChildOfClass("Humanoid") then
+        character.Humanoid:GetPropertyChangedSignal("SeatPart"):Connect(function()
+            -- SeatPartがnilになった（降りた）時
+            if character.Humanoid.SeatPart == nil and AutoSitEnabled then
+                task.wait(0.1) -- 処理待ちのため少し待つ
+                
+                -- ブロブマンを探す (特にキャッシュリストから)
+                local targetBlobman = nil
+                for _, b in ipairs(blobmanList) do
+                    if b:FindFirstChild("VehicleSeat") then
+                        targetBlobman = b
+                        break
+                    end
+                end
+                
+                -- キャッシュになければ、ワークスペースから探す（これは最後の手段でラグの原因になりうる）
+                if not targetBlobman then
+                    for _, v in pairs(game.Workspace:GetDescendants()) do
+                        if v.Name == _G.BlobmanToyName and v:FindFirstChild("VehicleSeat") then
+                            targetBlobman = v
+                            break
+                        end
+                    end
+                end
 
-function Qop.Update(dt) -- 既存のUpdate関数があれば、その内容をここに入れるか、既存の関数の最後に以下を追加
-    -- 既存のUpdateロジックがあればここに
-    
-    -- 既存のUpdateロジックが続く場合はここに
-end
-
--- 😈 RunService.HeartbeatにQop.Updateを接続する。既存の接続があればそれにマージする
-RunService.Heartbeat:Connect(function(dt)
-    -- Qop.Update(dt)
-    
-    -- 😈 自動着席ロジックの実行
-    -- BlobmanClientやSitCFrameのチェックは、BlobmanTabのロジックを流用し、
-    -- VehicleSeatが存在するかどうかでチェックする
-    if AutoSitEnabled then
-        local foundBlobman
-        for _, v in pairs(game.Workspace:GetDescendants()) do
-            if v.Name == "CreatureBlobman" then
-                foundBlobman = v
-                break
+                -- 見つかったブロブマンに座る
+                if targetBlobman then
+                    local VehicleSeat = targetBlobman:FindFirstChild("VehicleSeat")
+                    if VehicleSeat and character.Humanoid.SeatPart == nil then
+                        VehicleSeat:Sit(character.Humanoid)
+                    end
+                end
             end
-        end
-        
-        if foundBlobman then
-            local VehicleSeat = foundBlobman:FindFirstChild("VehicleSeat")
-            local Player = game.Players.LocalPlayer
-            local Character = Player.Character
-            
-            -- VehicleSeatが存在し、かつプレイヤーが乗り物などに座っていないことを確認
-            if VehicleSeat and Character and Character.Humanoid and Character.Humanoid.SeatPart == nil then
-                -- ブロブマンのSeatに座る
-                VehicleSeat:Sit(Character.Humanoid)
-            end
-        end
+        end)
     end
 end)
+-- /自動着席ロジックをHeartbeatから切り離す
 
 
 OrionLib:MakeNotification({Name = "Welcome", Content = "ようこそ、野獣のおちんちんハブへ", Image = "rbxassetid://4483345998", Time = 5})
