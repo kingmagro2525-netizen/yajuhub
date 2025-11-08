@@ -66,6 +66,8 @@ local lightbitcon2
 local lightorbitcon
 local bodyPositions = {}
 local alignOrientations = {}
+local NoclipToggleConnection -- 😈 Noclip接続用変数
+local NoclipToggleEnabled = false -- 😈 Noclipトグルの状態変数
 
 -- 😈 新しいグローバル変数の追加
 local AutoSitEnabled = false
@@ -358,6 +360,64 @@ local function noclipGrab()
         wait()
     end
 end
+
+-- 😈 Noclip トグル機能の実装
+local function togglePlayerNoclip(enabled)
+    NoclipToggleEnabled = enabled
+    if enabled then
+        -- Heartbeatで継続的にCanCollideを設定
+        NoclipToggleConnection = RunService.Heartbeat:Connect(function()
+            if not playerCharacter then return end
+
+            -- プレイヤーのパーツを処理
+            for _, part in ipairs(playerCharacter:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide == true and not part.Anchored then
+                    part.CanCollide = false
+                end
+            end
+            
+            -- 乗り物に乗っているか確認
+            local humanoid = playerCharacter:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.SeatPart and humanoid.SeatPart.Parent then
+                local vehicle = humanoid.SeatPart.Parent
+                -- 乗り物のパーツを処理
+                for _, part in ipairs(vehicle:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide == true and not part.Anchored then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+    else
+        -- トグルがオフになったら接続を切断し、CanCollideを元に戻す
+        if NoclipToggleConnection then
+            NoclipToggleConnection:Disconnect()
+            NoclipToggleConnection = nil
+        end
+
+        -- プレイヤーのパーツを元に戻す
+        if playerCharacter then
+            for _, part in ipairs(playerCharacter:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide == false and not part.Anchored then
+                    part.CanCollide = true
+                end
+            end
+        end
+
+        -- 乗り物のパーツを元に戻す
+        local humanoid = playerCharacter and playerCharacter:FindFirstChildOfClass("Humanoid")
+        if humanoid and humanoid.SeatPart and humanoid.SeatPart.Parent then
+            local vehicle = humanoid.SeatPart.Parent
+            for _, part in ipairs(vehicle:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide == false and not part.Anchored then
+                    part.CanCollide = true
+                end
+            end
+        end
+    end
+end
+-- 😈 /Noclip トグル機能の実装
+
 local function spawnItemCf(itemName, cframe)
     task.spawn(function()
         local rotation = Vector3.new(0, 0, 0)
@@ -2068,6 +2128,15 @@ AuraTab:AddToggle({
     end
 })
 
+
+CharacterTab:AddToggle({
+    Name = "自分と乗り物のNoclip", -- 😈 Noclip トグル
+    Default = false,
+    Save = true,
+    Color = Color3.fromRGB(255, 100, 0),
+    Flag = "SelfVehicleNoclip",
+    Callback = togglePlayerNoclip -- 😈 Noclip 関数を直接コールバックに設定
+})
 
 CharacterTab:AddToggle({
     Name = "しゃがみ速度",
