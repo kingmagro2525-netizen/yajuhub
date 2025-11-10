@@ -27,7 +27,6 @@ local reloadBombCoroutine
 local antiExplosionConnection
 local poisonAuraCoroutine
 local deathAuraCoroutine
-local reloadBombCoroutine
 local poisonCoroutines = {}
 local strengthConnection
 local coroutineRunning = false
@@ -2466,7 +2465,7 @@ KeybindSection2:AddBind({
                 ["ImpactSpeed"] = 100,
                 ["ExplodesByPointy"] = false,
                 ["DestroysModel"] = false,
-                ["PositionPart"] = localPlayer.Character.HumanoidRootPart or localPlayer.Character.PrimaryPart
+                    ["PositionPart"] = localPlayer.Character.HumanoidRootPart or localPlayer.Character.PrimaryPart
             },
             [2] = localPlayer.Character.HumanoidRootPart.Position or localPlayer.Character.PrimaryPart.Position
         }
@@ -2724,54 +2723,17 @@ DevTab:AddToggle({
     end
 })
 
--- 😈 Qop.Update関数に自動着席ロジックを追加
-local Qop = {} -- 既存のコードにQopテーブルが存在しない場合を想定（存在する場合はマージされる）
+-- Qopテーブルはここでは不要ですが、一応残します
+local Qop = {} 
 
-function Qop.Update(dt) -- 既存のUpdate関数があれば、その内容をここに入れるか、既存の関数の最後に以下を追加
-    -- 既存のUpdateロジックがあればここに
-    
-    -- 😈 自動着席ロジックの開始
-    -- BlobmanClientが存在しないため、直接Workspaceからブロブマンを探すロジックに変更
-    if AutoSitEnabled then
-        local foundBlobman
-        for _, v in pairs(game.Workspace:GetDescendants()) do
-            if v.Name == "CreatureBlobman" then
-                foundBlobman = v
-                break
-            end
-        end
-        
-        if foundBlobman then
-            local BlobmanClient = foundBlobman -- BlobmanClient変数として扱う
-            local VehicleSeat = BlobmanClient:FindFirstChild("VehicleSeat")
-            local Player = game.Players.LocalPlayer
-            local Character = Player.Character
-            
-            -- VehicleSeatが存在し、かつプレイヤーが座っていない場合
-            if VehicleSeat and Character and Character.Humanoid and Character.Humanoid.SeatPart == nil then
-                
-                -- ブロブマンのモデルがロード済みか、VehicleSeatが存在すればSitを試みる
-                -- (オリジナルのコードのBlobmanClient:Sit()をVehicleSeat:Sit(Character.Humanoid)に置き換える)
-                VehicleSeat:Sit(Character.Humanoid)
-            end
-        end
-    end
-    -- 😈 自動着席ロジックの終了
-    
-    -- 既存のUpdateロジックが続く場合はここに
-end
-
--- 😈 RunService.HeartbeatにQop.Updateを接続する。既存の接続があればそれにマージする
+-- RunService.HeartbeatにQop.Updateのロジックと自動着席ロジックを統合
 RunService.Heartbeat:Connect(function(dt)
-    -- Qop.Update(dt)
-    
     -- 😈 自動着席ロジックの実行
-    -- BlobmanClientやSitCFrameのチェックは、BlobmanTabのロジックを流用し、
-    -- VehicleSeatが存在するかどうかでチェックする
     if AutoSitEnabled then
         local foundBlobman
         for _, v in pairs(game.Workspace:GetDescendants()) do
             if v.Name == "CreatureBlobman" then
+                -- ブロブマンの所有者チェック（確実性を高めるため、トイフォルダ内または現在のブロブマンの所有者であるかを確認するロジックを検討しても良い）
                 foundBlobman = v
                 break
             end
