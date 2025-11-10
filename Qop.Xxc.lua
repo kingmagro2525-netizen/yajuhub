@@ -27,6 +27,7 @@ local reloadBombCoroutine
 local antiExplosionConnection
 local poisonAuraCoroutine
 local deathAuraCoroutine
+local reloadBombCoroutine
 local poisonCoroutines = {}
 local strengthConnection
 local coroutineRunning = false
@@ -68,6 +69,10 @@ local alignOrientations = {}
 
 -- 😈 新しいグローバル変数の追加
 AutoSitEnabled = false
+-- 😈 ループTP機能用の新しい変数の追加
+LoopTpEnabled = false
+local loopTpCoroutine 
+local currentLoopTpPlayerIndex = 1
 
 local decoyOffset = 15
 local stopDistance = 5
@@ -875,7 +880,91 @@ local function blobGrabPlayer(player, blobman)
     end
 end
 
+-- 😈 ループTP機能の中核ロジック
+local function loopTpFunction()
+    if not blobman then
+        OrionLib:MakeNotification({
+            Name = "Error",
+            Content = "ブロブマンに乗ってからトグルをオンにしてください", 
+            Image = "rbxassetid://4483345998", 
+            Time = 5
+        })
+        return
+    end
 
+    local allPlayers = Players:GetPlayers()
+    local targetPlayers = {}
+    for _, player in pairs(allPlayers) do
+        if player ~= localPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            table.insert(targetPlayers, player)
+        end
+    end
+
+    if #targetPlayers == 0 then
+        OrionLib:MakeNotification({
+            Name = "Error",
+            Content = "TP可能なプレイヤーが見つかりません", 
+            Image = "rbxassetid://4483345998", 
+            Time = 3
+        })
+        return
+    end
+
+    -- 初期プレイヤーを現在ターゲットインデックスとして設定
+    local playerIndex = currentLoopTpPlayerIndex
+
+    while LoopTpEnabled do
+        local targetPlayer = targetPlayers[playerIndex]
+
+        if not targetPlayer or not targetPlayer.Character or not targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            -- プレイヤーが見つからないか無効な場合、次のプレイヤーへスキップ
+            playerIndex = (playerIndex % #targetPlayers) + 1
+            wait(0.1)
+            goto continue_loop
+        end
+
+        local targetHRP = targetPlayer.Character.HumanoidRootPart
+        -- プレイヤーのHumanoidRootPartの少し下にTPさせる位置を計算
+        local tpPosition = targetHRP.Position - Vector3.new(0, 5, 0)
+        
+        -- ブロブマンをTPさせる（メインの処理）
+        if blobman and blobman.PrimaryPart then
+            blobman.PrimaryPart.CFrame = CFrame.new(tpPosition)
+        end
+
+        -- ターゲットプレイヤーを掴む
+        blobGrabPlayer(targetPlayer, blobman)
+
+        -- プレイヤーが掴まれるまで待機
+        local grabbedSuccessfully = false
+        local startTime = tick()
+        while tick() - startTime < 0.5 do -- 0.5秒待機
+            if targetPlayer.IsHeld and targetPlayer.IsHeld.Value then
+                grabbedSuccessfully = true
+                break
+            end
+            wait(0.01)
+        end
+
+        -- 掴んだら次のプレイヤーにインデックスを移動
+        if grabbedSuccessfully then
+            playerIndex = (playerIndex % #targetPlayers) + 1
+            currentLoopTpPlayerIndex = playerIndex
+        end
+        
+        wait(_G.BlobmanDelay or 0.05) -- スライダーで設定されたディレイを使用
+
+        ::continue_loop::
+    end
+end
+-- 😈 ループTP終了時のクリーンアップ
+local function cleanupLoopTp()
+    if loopTpCoroutine then
+        coroutine.close(loopTpCoroutine)
+        loopTpCoroutine = nil
+        currentLoopTpPlayerIndex = 1
+    end
+end
 
 
 local version = getVersion()
@@ -1533,6 +1622,63 @@ blobman1 = BlobmanTab:AddToggle({
     end
 })
 
+-- 😈 新規追加：ループTPトグル
+BlobmanTab:AddToggle({
+    Name = "ループTPトグル (Loop TP Toggle)",
+    Desc = "オンにすると、ブロブマンに乗っている間、プレイヤーを順番にTPさせ、掴みます。",
+    Default = false,
+    Color = Color3.fromRGB(0, 100, 255), -- 青色に変更
+    Save = true,
+    Flag = "LoopTpToggle",
+    Callback = function(enabled)
+        LoopTpEnabled = enabled
+        if enabled then
+            
+            -- ブロブマンが座席にいるか確認
+            local foundBlobman = false
+            for i, v in pairs(game.Workspace:GetDescendants()) do
+                if v.Name == "CreatureBlobman" then
+                    if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
+                        blobman = v
+                        foundBlobman = true
+                        break
+                    end
+                end
+            end
+            
+            if not foundBlobman then
+                OrionLib:MakeNotification({
+                    Name = "Error",
+                    Content = "ブロブマンに乗ってからトグルをオンにしてください", 
+                    Image = "rbxassetid://4483345998", 
+                    Time = 5
+                })
+                LoopTpEnabled = false
+                return -- 関数を終了
+            end
+            
+            if not loopTpCoroutine or coroutine.status(loopTpCoroutine) == "dead" then
+                loopTpCoroutine = coroutine.create(loopTpFunction)
+                coroutine.resume(loopTpCoroutine)
+                OrionLib:MakeNotification({
+                    Name = "起動",
+                    Content = "ループTPを開始します", 
+                    Image = "rbxassetid://4483345998", 
+                    Time = 3
+                })
+            end
+        else
+            cleanupLoopTp()
+            OrionLib:MakeNotification({
+                Name = "停止",
+                Content = "ループTPを停止しました", 
+                Image = "rbxassetid://4483345998", 
+                Time = 3
+            })
+        end
+    end
+})
+
 -- 😈 自動着席トグルの追加
 BlobmanTab:AddToggle({
     Name = "Auto Sit",
@@ -1600,7 +1746,7 @@ BlobmanTab:AddToggle({
     end
 })
 
-BlobmanTab:AddParagraph("使い方", "1. ブロブマンに乗る\n2. ループグラブオールをON\n3. 投げ飛ばしモードをONにすると相手がめちゃくちゃ飛びます")
+BlobmanTab:AddParagraph("使い方", "1. ブロブマンに乗る\n2. ループグラブオールをON\n3. 投げ飛ばしモードをONにすると相手がめちゃくちゃ飛びます\n\n**[追加された機能]**\n4. ループTPトグルをONにすると、ブロブマンがプレイヤーの足元に次々とTPします。")
 
 AuraTab:AddLabel("オーラ")
 
@@ -2465,7 +2611,7 @@ KeybindSection2:AddBind({
                 ["ImpactSpeed"] = 100,
                 ["ExplodesByPointy"] = false,
                 ["DestroysModel"] = false,
-                    ["PositionPart"] = localPlayer.Character.HumanoidRootPart or localPlayer.Character.PrimaryPart
+                ["PositionPart"] = localPlayer.Character.HumanoidRootPart or localPlayer.Character.PrimaryPart
             },
             [2] = localPlayer.Character.HumanoidRootPart.Position or localPlayer.Character.PrimaryPart.Position
         }
@@ -2600,7 +2746,7 @@ KeybindSection2:AddToggle({
 			end)
 		else
             pcall(function()
-                lightorbitcon:Disconnect()
+                if lightorbitcon then lightorbitcon:Disconnect() end
             end)
 			
 			for i, v in ipairs(lightbitparts) do
@@ -2619,7 +2765,7 @@ KeybindSection2:AddToggle({
 			end
 			alignOrientations = {}
 			for _, v in ipairs(lightbitparts) do
-				v:FindFirstChild("Attachment"):Destroy()
+                if v:FindFirstChild("Attachment") then v:FindFirstChild("Attachment"):Destroy() end
 			end
 			lightbitparts = {}
 		end
@@ -2635,7 +2781,7 @@ KeybindSection2:AddBind({
     Flag = "LightBitSpeedUpDev",
     Callback = function(isHeld)
         pcall(function()
-            lightbitcon:Disconnect()
+            if lightbitcon then lightbitcon:Disconnect() end
         end)
 		lightbitcon = RunService.Heartbeat:Connect(function()
 			if isHeld then
@@ -2656,7 +2802,7 @@ KeybindSection2:AddBind({
     Flag = "LightBitRadiusUpDev",
     Callback = function(isHeld)
         pcall(function()
-            lightbitcon2:Disconnect()
+            if lightbitcon2 then lightbitcon2:Disconnect() end
         end)
 		lightbitcon2 = RunService.Heartbeat:Connect(function()
 			if isHeld then
@@ -2723,17 +2869,54 @@ DevTab:AddToggle({
     end
 })
 
--- Qopテーブルはここでは不要ですが、一応残します
-local Qop = {} 
+-- 😈 Qop.Update関数に自動着席ロジックを追加
+local Qop = {} -- 既存のコードにQopテーブルが存在しない場合を想定（存在する場合はマージされる）
 
--- RunService.HeartbeatにQop.Updateのロジックと自動着席ロジックを統合
-RunService.Heartbeat:Connect(function(dt)
-    -- 😈 自動着席ロジックの実行
+function Qop.Update(dt) -- 既存のUpdate関数があれば、その内容をここに入れるか、既存の関数の最後に以下を追加
+    -- 既存のUpdateロジックがあればここに
+    
+    -- 😈 自動着席ロジックの開始
+    -- BlobmanClientが存在しないため、直接Workspaceからブロブマンを探すロジックに変更
     if AutoSitEnabled then
         local foundBlobman
         for _, v in pairs(game.Workspace:GetDescendants()) do
             if v.Name == "CreatureBlobman" then
-                -- ブロブマンの所有者チェック（確実性を高めるため、トイフォルダ内または現在のブロブマンの所有者であるかを確認するロジックを検討しても良い）
+                foundBlobman = v
+                break
+            end
+        end
+        
+        if foundBlobman then
+            local BlobmanClient = foundBlobman -- BlobmanClient変数として扱う
+            local VehicleSeat = BlobmanClient:FindFirstChild("VehicleSeat")
+            local Player = game.Players.LocalPlayer
+            local Character = Player.Character
+            
+            -- VehicleSeatが存在し、かつプレイヤーが座っていない場合
+            if VehicleSeat and Character and Character.Humanoid and Character.Humanoid.SeatPart == nil then
+                
+                -- ブロブマンのモデルがロード済みか、VehicleSeatが存在すればSitを試みる
+                -- (オリジナルのコードのBlobmanClient:Sit()をVehicleSeat:Sit(Character.Humanoid)に置き換える)
+                VehicleSeat:Sit(Character.Humanoid)
+            end
+        end
+    end
+    -- 😈 自動着席ロジックの終了
+    
+    -- 既存のUpdateロジックが続く場合はここに
+end
+
+-- 😈 RunService.HeartbeatにQop.Updateを接続する。既存の接続があればそれにマージする
+RunService.Heartbeat:Connect(function(dt)
+    -- Qop.Update(dt)
+    
+    -- 😈 自動着席ロジックの実行
+    -- BlobmanClientやSitCFrameのチェックは、BlobmanTabのロジックを流用し、
+    -- VehicleSeatが存在するかどうかでチェックする
+    if AutoSitEnabled then
+        local foundBlobman
+        for _, v in pairs(game.Workspace:GetDescendants()) do
+            if v.Name == "CreatureBlobman" then
                 foundBlobman = v
                 break
             end
