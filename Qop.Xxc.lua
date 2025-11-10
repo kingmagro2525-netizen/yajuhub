@@ -89,39 +89,160 @@ local lightbitradius = 20
 local usingradius = lightbitradius
 
 local OrionLib = loadstring(game:HttpGet(("https://raw.githubusercontent.com/yua20170313a-pixel/Orion/e19e8236bde46c459fb0d617e4640aeb75878703/source")))()
---[[
-    Utilities.IsDescendantOf(child, parent)
 
-    Utilities.GetDescendant(parent, name, className)
+--- Utilities (U) の実装
+local Utilities = {}
 
-    Utilities.GetAncestor(child, name, className)
+-- Utilities.IsDescendantOf(child, parent)
+function Utilities.IsDescendantOf(child, parent)
+    local currentParent = child.Parent
+    while currentParent do
+        if currentParent == parent then
+            return true
+        end
+        currentParent = currentParent.Parent
+    end
+    return false
+end
 
-    Utilities.FindFirstAncestorOfType(child, className)
+-- Utilities.GetDescendant(parent, name, className)
+function Utilities.GetDescendant(parent, name, className)
+    for _, descendant in ipairs(parent:GetDescendants()) do
+        if descendant.Name == name and (not className or descendant:IsA(className)) then
+            return descendant
+        end
+    end
+    return nil
+end
 
-    Utilities.GetChildrenByType(parent, className)
+-- Utilities.GetAncestor(child, name, className)
+function Utilities.GetAncestor(child, name, className)
+    local currentParent = child.Parent
+    while currentParent do
+        if currentParent.Name == name and (not className or currentParent:IsA(className)) then
+            return currentParent
+        end
+        currentParent = currentParent.Parent
+    end
+    return nil
+end
 
-    Utilities.GetDescendantsByType(parent, className)
+-- Utilities.FindFirstAncestorOfType(child, className)
+function Utilities.FindFirstAncestorOfType(child, className)
+    local currentParent = child.Parent
+    while currentParent do
+        if currentParent:IsA(className) then
+            return currentParent
+        end
+        currentParent = currentParent.Parent
+    end
+    return nil
+end
 
-    Utilities.HasAttribute(instance, attributeName)
+-- Utilities.GetChildrenByType(parent, className)
+function Utilities.GetChildrenByType(parent, className)
+    local results = {}
+    for _, child in ipairs(parent:GetChildren()) do
+        if child:IsA(className) then
+            table.insert(results, child)
+        end
+    end
+    return results
+end
 
-    Utilities.GetAttributeOrDefault(instance, attributeName, defaultValue)
+-- Utilities.GetDescendantsByType(parent, className)
+function Utilities.GetDescendantsByType(parent, className)
+    local results = {}
+    for _, descendant in ipairs(parent:GetDescendants()) do
+        if descendant:IsA(className) then
+            table.insert(results, descendant)
+        end
+    end
+    return results
+end
 
-    Utilities.CloneInstance(instance, newParent)
-    
-    Utilities.WaitForChildOfType(parent, className, timeout)
+-- Utilities.HasAttribute(instance, attributeName)
+function Utilities.HasAttribute(instance, attributeName)
+    return instance:GetAttribute(attributeName) ~= nil
+end
 
-    Utilities.IsPointInPart(part, point)
+-- Utilities.GetAttributeOrDefault(instance, attributeName, defaultValue)
+function Utilities.GetAttributeOrDefault(instance, attributeName, defaultValue)
+    local value = instance:GetAttribute(attributeName)
+    return value ~= nil and value or defaultValue
+end
 
-    Utilities.GetDistance(pointA, pointB)
+-- Utilities.CloneInstance(instance, newParent)
+function Utilities.CloneInstance(instance, newParent)
+    local clone = instance:Clone()
+    if newParent then
+        clone.Parent = newParent
+    end
+    return clone
+end
 
-    Utilities.GetAngleBetweenVectors(vectorA, vectorB)
+-- Utilities.WaitForChildOfType(parent, className, timeout)
+function Utilities.WaitForChildOfType(parent, className, timeout)
+    local startTime = tick()
+    while timeout == nil or tick() - startTime < timeout do
+        for _, child in ipairs(parent:GetChildren()) do
+            if child:IsA(className) then
+                return child
+            end
+        end
+        RunService.Stepped:Wait() -- より正確な待機
+    end
+    return nil
+end
 
-    Utilities.RotateVectorY(vector, angle)
+-- Utilities.IsPointInPart(part, point)
+function Utilities.IsPointInPart(part, point)
+    local pointInPartSpace = part.CFrame:PointToObjectSpace(point)
+    local size = part.Size
+    return math.abs(pointInPartSpace.X) <= size.X / 2 and
+           math.abs(pointInPartSpace.Y) <= size.Y / 2 and
+           math.abs(pointInPartSpace.Z) <= size.Z / 2
+end
 
-    Utilities.GetSurroundingVectors(target, radius, amount, offset)
+-- Utilities.GetDistance(pointA, pointB)
+function Utilities.GetDistance(pointA, pointB)
+    return (pointA - pointB).Magnitude
+end
+
+-- Utilities.GetAngleBetweenVectors(vectorA, vectorB)
+function Utilities.GetAngleBetweenVectors(vectorA, vectorB)
+    local dotProduct = vectorA:Dot(vectorB)
+    local magnitudeProduct = vectorA.Magnitude * vectorB.Magnitude
+    if magnitudeProduct == 0 then return 0 end
+    return math.acos(math.clamp(dotProduct / magnitudeProduct, -1, 1))
+end
+
+-- Utilities.RotateVectorY(vector, angle)
+function Utilities.RotateVectorY(vector, angle)
+    local cosA = math.cos(angle)
+    local sinA = math.sin(angle)
+    local x = vector.X * cosA - vector.Z * sinA
+    local z = vector.X * sinA + vector.Z * cosA
+    return Vector3.new(x, vector.Y, z)
+end
+
+-- Utilities.GetSurroundingVectors(target, radius, amount, offset)
+function Utilities.GetSurroundingVectors(target, radius, amount, offset)
+    local positions = {}
+    for i = 1, amount do
+        local angle = ((i - 1) / amount) * 2 * math.pi + offset
+        local x = target.X + radius * math.cos(angle)
+        local z = target.Z + radius * math.sin(angle)
+        table.insert(positions, Vector3.new(x, target.Y, z))
+    end
+    return positions
+end
+
+-- Utilities のエイリアス (既存コードとの互換性のため)
+local U = Utilities
+--- Utilities (U) の実装ここまで
 
 
---]]
 local followMode = true
 local toysFolder = workspace:FindFirstChild(localPlayer.Name.."SpawnedInToys")
 local playerList = {}
@@ -214,7 +335,10 @@ local function cleanupConnections(connectionTable)
     for _, connection in ipairs(connectionTable) do
         connection:Disconnect()
     end
-    connectionTable = {}
+    -- 接続テーブルを空にするために新しいテーブルを代入するのではなく、既存のテーブルをクリア
+    for i = #connectionTable, 1, -1 do
+        table.remove(connectionTable, i)
+    end
 end
 
 local function getVersion()
@@ -287,8 +411,13 @@ local function grabHandler(grabType)
             local child = workspace:FindFirstChild("GrabParts")
             if child and child.Name == "GrabParts" then
                 local grabPart = child:FindFirstChild("GrabPart")
-                local grabbedPart = grabPart:FindFirstChild("WeldConstraint").Part1
-                local head = grabbedPart.Parent:FindFirstChild("Head")
+                local weldConstraint = grabPart:FindFirstChild("WeldConstraint")
+                if not weldConstraint or not weldConstraint.Part1 then return end
+                
+                local grabbedPart = weldConstraint.Part1
+                local character = Utilities.FindFirstAncestorOfType(grabbedPart, "Model")
+                local head = character and character:FindFirstChild("Head")
+                
                 if head then
                     while workspace:FindFirstChild("GrabParts") do
                         local partsTable = grabType == "poison" and poisonHurtParts or paintPlayerParts
@@ -318,8 +447,13 @@ local function fireGrab()
             local child = workspace:FindFirstChild("GrabParts")
             if child and child.Name == "GrabParts" then
                 local grabPart = child:FindFirstChild("GrabPart")
-                local grabbedPart = grabPart:FindFirstChild("WeldConstraint").Part1
-                local head = grabbedPart.Parent:FindFirstChild("Head")
+                local weldConstraint = grabPart:FindFirstChild("WeldConstraint")
+                if not weldConstraint or not weldConstraint.Part1 then return end
+
+                local grabbedPart = weldConstraint.Part1
+                local character = Utilities.FindFirstAncestorOfType(grabbedPart, "Model")
+                local head = character and character:FindFirstChild("Head")
+                
                 if head then
                     arson(head)
                 end
@@ -335,9 +469,13 @@ local function noclipGrab()
             local child = workspace:FindFirstChild("GrabParts")
             if child and child.Name == "GrabParts" then
                 local grabPart = child:FindFirstChild("GrabPart")
-                local grabbedPart = grabPart:FindFirstChild("WeldConstraint").Part1
-                local character = grabbedPart.Parent
-                if character.HumanoidRootPart then
+                local weldConstraint = grabPart:FindFirstChild("WeldConstraint")
+                if not weldConstraint or not weldConstraint.Part1 then return end
+
+                local grabbedPart = weldConstraint.Part1
+                local character = Utilities.FindFirstAncestorOfType(grabbedPart, "Model")
+                
+                if character and character.HumanoidRootPart then
                     while workspace:FindFirstChild("GrabParts") do
                         for _, part in pairs(character:GetChildren()) do
                             if part:IsA("BasePart") then
@@ -424,7 +562,7 @@ end
 
 local function onPartOwnerAdded(descendant, primaryPart)
     if descendant.Name == "PartOwner" and descendant.Value ~= localPlayer.Name then
-        local highlight = primaryPart:FindFirstChild("Highlight") or U.GetDescendant(U.FindFirstAncestorOfType(primaryPart, "Model"), "Highlight", "Highlight")
+        local highlight = primaryPart:FindFirstChild("Highlight") or Utilities.GetDescendant(Utilities.FindFirstAncestorOfType(primaryPart, "Model"), "Highlight", "Highlight")
         if highlight then
             if descendant.Value ~= localPlayer.Name then
                 highlight.OutlineColor = Color3.new(1, 0, 0)
@@ -481,8 +619,8 @@ local function anchorGrab()
             end
             if t and not table.find(anchoredParts, primaryPart) then
                 local target 
-                if U.FindFirstAncestorOfType(primaryPart, "Model") and U.FindFirstAncestorOfType(primaryPart, "Model") ~= workspace then
-                    target = U.FindFirstAncestorOfType(primaryPart, "Model")
+                if Utilities.FindFirstAncestorOfType(primaryPart, "Model") and Utilities.FindFirstAncestorOfType(primaryPart, "Model") ~= workspace then
+                    target = Utilities.FindFirstAncestorOfType(primaryPart, "Model")
                 else
                     target = primaryPart
                 end
@@ -498,8 +636,8 @@ local function anchorGrab()
             end
 
             
-            if U.FindFirstAncestorOfType(primaryPart, "Model") and U.FindFirstAncestorOfType(primaryPart, "Model") ~= workspace then 
-                for _, child in ipairs(U.FindFirstAncestorOfType(primaryPart, "Model"):GetDescendants()) do
+            if Utilities.FindFirstAncestorOfType(primaryPart, "Model") and Utilities.FindFirstAncestorOfType(primaryPart, "Model") ~= workspace then 
+                for _, child in ipairs(Utilities.FindFirstAncestorOfType(primaryPart, "Model"):GetDescendants()) do
                     if child:IsA("BodyPosition") or child:IsA("BodyGyro") then
                         child:Destroy()
                     end
@@ -779,7 +917,8 @@ local function reloadMissile(bool)
                                     end
                                 end
                             end)
-                            Debris:AddItem(connectio, 60)
+                            -- ❌ タイポ修正: connectio -> connection
+                            Debris:AddItem(connection, 60)
                             if waiting and waiting.Value == localPlayer.Name then
                                 for _, v in pairs(child:GetChildren()) do
                                     if v:IsA("BasePart") then
@@ -914,11 +1053,16 @@ local function loopTpFunction()
     local playerIndex = currentLoopTpPlayerIndex
 
     while LoopTpEnabled do
+        -- インデックスをループさせる
+        if playerIndex > #targetPlayers then
+            playerIndex = 1
+        end
+        
         local targetPlayer = targetPlayers[playerIndex]
 
         if not targetPlayer or not targetPlayer.Character or not targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
             -- プレイヤーが見つからないか無効な場合、次のプレイヤーへスキップ
-            playerIndex = (playerIndex % #targetPlayers) + 1
+            playerIndex = playerIndex + 1
             wait(0.1)
             goto continue_loop
         end
@@ -938,8 +1082,10 @@ local function loopTpFunction()
         -- プレイヤーが掴まれるまで待機
         local grabbedSuccessfully = false
         local startTime = tick()
+        -- プレイヤーが持つ IsHeld ValueObject が存在するか確認し、その値を取得
+        local isHeldValue = targetPlayer:FindFirstChild("IsHeld") 
         while tick() - startTime < 0.5 do -- 0.5秒待機
-            if targetPlayer.IsHeld and targetPlayer.IsHeld.Value then
+            if isHeldValue and isHeldValue.Value then
                 grabbedSuccessfully = true
                 break
             end
@@ -948,7 +1094,7 @@ local function loopTpFunction()
 
         -- 掴んだら次のプレイヤーにインデックスを移動
         if grabbedSuccessfully then
-            playerIndex = (playerIndex % #targetPlayers) + 1
+            playerIndex = playerIndex + 1
             currentLoopTpPlayerIndex = playerIndex
         end
         
@@ -1635,8 +1781,8 @@ BlobmanTab:AddToggle({
         if enabled then
             
             -- ブロブマンが座席にいるか確認
-            local foundBlobman = false
-            for i, v in pairs(game.Workspace:GetDescendants()) do
+            local foundBlobman
+            for _, v in pairs(game.Workspace:GetDescendants()) do
                 if v.Name == "CreatureBlobman" then
                     if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
                         blobman = v
@@ -2409,12 +2555,13 @@ KeybindSection:AddBind({
     Save = true,
     Flag = "BurnKeybind",
     Callback = function()
-        local mouse = localPlayer:GetMouse()
-        local target = mouse.Target
         if not ownedToys["Campfire"] then 
             OrionLib:MakeNotification({Name = "Missing toy", Content = "あなたはキャンプファイヤーを所有していません ", Image = "rbxassetid://4483345998", Time = 3})
             return
         end
+        local mouse = localPlayer:GetMouse()
+        local target = mouse.Target
+        
         if target and target:IsA("BasePart") then
             local character = target.Parent
             if target.Name == "FirePlayerPart" then
@@ -2662,7 +2809,12 @@ KeybindSection2:AddBind({
             OrionLib:MakeNotification({Name = "No bombs", Content = "There are no cached bombs to explode", Image = "rbxassetid://4483345998", Time = 2})
             return
         end
-        local char = getNearestPlayer().Character
+        local nearestPlayer = getNearestPlayer()
+        if not nearestPlayer or not nearestPlayer.Character then
+             OrionLib:MakeNotification({Name = "Error", Content = "No nearest player found", Image = "rbxassetid://4483345998", Time = 2})
+             return
+        end
+        local char = nearestPlayer.Character
         for i = #bombList, 1, -1 do
             local bomb = table.remove(bombList, i)
             local args = {
@@ -2700,7 +2852,7 @@ KeybindSection2:AddToggle({
                     elseif v.PrimaryPart then
                         part = v.PrimaryPart
                     else
-                        part = v:FindFirstChildWhichIsActive("BasePart")
+                        part = v:FindFirstChildWhichIsA("BasePart")
                     end
 					table.insert(lightbitparts, part)
 					for _, p in pairs(v:GetDescendants()) do
@@ -2735,7 +2887,8 @@ KeybindSection2:AddToggle({
 			lightorbitcon = RunService.Heartbeat:Connect(function()
 				if not localPlayer.Character or not localPlayer.Character.HumanoidRootPart then return end
 				lightbitoffset = lightbitoffset + lightbit
-				lightbitpos = U.GetSurroundingVectors(localPlayer.Character.HumanoidRootPart.Position, usingradius, #lightbitparts, lightbitoffset)
+				-- 修正: U.GetSurroundingVectors -> Utilities.GetSurroundingVectors
+				lightbitpos = Utilities.GetSurroundingVectors(localPlayer.Character.HumanoidRootPart.Position, usingradius, #lightbitparts, lightbitoffset)
 
 				for i, v in ipairs(lightbitpos) do
 					bodyPositions[i].Position = v
@@ -2869,68 +3022,40 @@ DevTab:AddToggle({
     end
 })
 
--- 😈 Qop.Update関数に自動着席ロジックを追加
-local Qop = {} -- 既存のコードにQopテーブルが存在しない場合を想定（存在する場合はマージされる）
+-- 😈 Qop.Update関数を定義し、自動着席ロジックをHeartbeatに接続する
+local Qop = {} 
 
-function Qop.Update(dt) -- 既存のUpdate関数があれば、その内容をここに入れるか、既存の関数の最後に以下を追加
-    -- 既存のUpdateロジックがあればここに
-    
-    -- 😈 自動着席ロジックの開始
-    -- BlobmanClientが存在しないため、直接Workspaceからブロブマンを探すロジックに変更
-    if AutoSitEnabled then
-        local foundBlobman
-        for _, v in pairs(game.Workspace:GetDescendants()) do
-            if v.Name == "CreatureBlobman" then
-                foundBlobman = v
-                break
-            end
-        end
-        
-        if foundBlobman then
-            local BlobmanClient = foundBlobman -- BlobmanClient変数として扱う
-            local VehicleSeat = BlobmanClient:FindFirstChild("VehicleSeat")
-            local Player = game.Players.LocalPlayer
-            local Character = Player.Character
-            
-            -- VehicleSeatが存在し、かつプレイヤーが座っていない場合
-            if VehicleSeat and Character and Character.Humanoid and Character.Humanoid.SeatPart == nil then
-                
-                -- ブロブマンのモデルがロード済みか、VehicleSeatが存在すればSitを試みる
-                -- (オリジナルのコードのBlobmanClient:Sit()をVehicleSeat:Sit(Character.Humanoid)に置き換える)
-                VehicleSeat:Sit(Character.Humanoid)
-            end
-        end
-    end
-    -- 😈 自動着席ロジックの終了
-    
-    -- 既存のUpdateロジックが続く場合はここに
+function Qop.Update(dt)
+    -- この関数はRunService.Heartbeatに接続されているため、毎フレーム実行されます。
 end
 
--- 😈 RunService.HeartbeatにQop.Updateを接続する。既存の接続があればそれにマージする
+-- 😈 RunService.Heartbeatに自動着席ロジックを接続
 RunService.Heartbeat:Connect(function(dt)
-    -- Qop.Update(dt)
+    -- Qop.Update(dt)は元のコードに無かったため、コメントアウト
     
     -- 😈 自動着席ロジックの実行
-    -- BlobmanClientやSitCFrameのチェックは、BlobmanTabのロジックを流用し、
-    -- VehicleSeatが存在するかどうかでチェックする
     if AutoSitEnabled then
         local foundBlobman
-        for _, v in pairs(game.Workspace:GetDescendants()) do
-            if v.Name == "CreatureBlobman" then
-                foundBlobman = v
-                break
-            end
-        end
+        local Player = game.Players.LocalPlayer
+        local Character = Player.Character
         
-        if foundBlobman then
-            local VehicleSeat = foundBlobman:FindFirstChild("VehicleSeat")
-            local Player = game.Players.LocalPlayer
-            local Character = Player.Character
+        if Character and Character.Humanoid and Character.Humanoid.SeatPart == nil then
+            -- プレイヤーが乗り物などに座っていないことを確認してからブロブマンを探す
+            for _, v in pairs(game.Workspace:GetDescendants()) do
+                if v.Name == "CreatureBlobman" then
+                    foundBlobman = v
+                    break
+                end
+            end
             
-            -- VehicleSeatが存在し、かつプレイヤーが乗り物などに座っていないことを確認
-            if VehicleSeat and Character and Character.Humanoid and Character.Humanoid.SeatPart == nil then
-                -- ブロブマンのSeatに座る
-                VehicleSeat:Sit(Character.Humanoid)
+            if foundBlobman then
+                local VehicleSeat = foundBlobman:FindFirstChild("VehicleSeat")
+                
+                -- VehicleSeatが存在し、かつプレイヤーが座っていないことを再確認
+                if VehicleSeat then
+                    -- ブロブマンのSeatに座る
+                    VehicleSeat:Sit(Character.Humanoid)
+                end
             end
         end
     end
