@@ -58,7 +58,8 @@ local noclipGrabCoroutine
 local antiKickCoroutine
 local kickGrabConnections = {}
 local blobmanCoroutine
-local lighBitSpeedCoroutine
+-- 修正: lighBitSpeedCoroutine -> lightBitSpeedCoroutine
+local lightBitSpeedCoroutine
 local lightbitpos = {}
 local lightbitparts = {}
 local lightbitcon
@@ -415,7 +416,7 @@ local function grabHandler(grabType)
                 if not weldConstraint or not weldConstraint.Part1 then return end
                 
                 local grabbedPart = weldConstraint.Part1
-                local character = Utilities.FindFirstAncestorOfType(grabbedPart, "Model")
+                local character = U.FindFirstAncestorOfType(grabbedPart, "Model")
                 local head = character and character:FindFirstChild("Head")
                 
                 if head then
@@ -451,7 +452,7 @@ local function fireGrab()
                 if not weldConstraint or not weldConstraint.Part1 then return end
 
                 local grabbedPart = weldConstraint.Part1
-                local character = Utilities.FindFirstAncestorOfType(grabbedPart, "Model")
+                local character = U.FindFirstAncestorOfType(grabbedPart, "Model")
                 local head = character and character:FindFirstChild("Head")
                 
                 if head then
@@ -473,7 +474,7 @@ local function noclipGrab()
                 if not weldConstraint or not weldConstraint.Part1 then return end
 
                 local grabbedPart = weldConstraint.Part1
-                local character = Utilities.FindFirstAncestorOfType(grabbedPart, "Model")
+                local character = U.FindFirstAncestorOfType(grabbedPart, "Model")
                 
                 if character and character.HumanoidRootPart then
                     while workspace:FindFirstChild("GrabParts") do
@@ -562,7 +563,7 @@ end
 
 local function onPartOwnerAdded(descendant, primaryPart)
     if descendant.Name == "PartOwner" and descendant.Value ~= localPlayer.Name then
-        local highlight = primaryPart:FindFirstChild("Highlight") or Utilities.GetDescendant(Utilities.FindFirstAncestorOfType(primaryPart, "Model"), "Highlight", "Highlight")
+        local highlight = primaryPart:FindFirstChild("Highlight") or U.GetDescendant(U.FindFirstAncestorOfType(primaryPart, "Model"), "Highlight", "Highlight")
         if highlight then
             if descendant.Value ~= localPlayer.Name then
                 highlight.OutlineColor = Color3.new(1, 0, 0)
@@ -619,8 +620,8 @@ local function anchorGrab()
             end
             if t and not table.find(anchoredParts, primaryPart) then
                 local target 
-                if Utilities.FindFirstAncestorOfType(primaryPart, "Model") and Utilities.FindFirstAncestorOfType(primaryPart, "Model") ~= workspace then
-                    target = Utilities.FindFirstAncestorOfType(primaryPart, "Model")
+                if U.FindFirstAncestorOfType(primaryPart, "Model") and U.FindFirstAncestorOfType(primaryPart, "Model") ~= workspace then
+                    target = U.FindFirstAncestorOfType(primaryPart, "Model")
                 else
                     target = primaryPart
                 end
@@ -636,8 +637,8 @@ local function anchorGrab()
             end
 
             
-            if Utilities.FindFirstAncestorOfType(primaryPart, "Model") and Utilities.FindFirstAncestorOfType(primaryPart, "Model") ~= workspace then 
-                for _, child in ipairs(Utilities.FindFirstAncestorOfType(primaryPart, "Model"):GetDescendants()) do
+            if U.FindFirstAncestorOfType(primaryPart, "Model") and U.FindFirstAncestorOfType(primaryPart, "Model") ~= workspace then 
+                for _, child in ipairs(U.FindFirstAncestorOfType(primaryPart, "Model"):GetDescendants()) do
                     if child:IsA("BodyPosition") or child:IsA("BodyGyro") then
                         child:Destroy()
                     end
@@ -909,7 +910,8 @@ local function reloadMissile(bool)
 
                             SetNetworkOwner:FireServer(child.Body, child.Body.CFrame)
                             local waiting = child.Body:WaitForChild("PartOwner", 0.5)
-                            local connection = child.DescendantAdded:Connect(function(descendant)
+                            local connection
+                            connection = child.DescendantAdded:Connect(function(descendant)
                                 if descendant.Name == "PartOwner" then
                                     if descendant.Value ~= localPlayer.Name then
                                         DestroyT(child)
@@ -917,7 +919,7 @@ local function reloadMissile(bool)
                                     end
                                 end
                             end)
-                            -- ❌ タイポ修正: connectio -> connection
+                            -- ✅ 致命的なエラー修正: connectio -> connection (行1268)
                             Debris:AddItem(connection, 60)
                             if waiting and waiting.Value == localPlayer.Name then
                                 for _, v in pairs(child:GetChildren()) do
@@ -2758,7 +2760,7 @@ KeybindSection2:AddBind({
                 ["ImpactSpeed"] = 100,
                 ["ExplodesByPointy"] = false,
                 ["DestroysModel"] = false,
-                ["PositionPart"] = localPlayer.Character.HumanoidRootPart or localPlayer.Character.PrimaryPart
+                    ["PositionPart"] = localPlayer.Character.HumanoidRootPart or localPlayer.Character.PrimaryPart
             },
             [2] = localPlayer.Character.HumanoidRootPart.Position or localPlayer.Character.PrimaryPart.Position
         }
