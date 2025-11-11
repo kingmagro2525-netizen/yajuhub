@@ -1767,25 +1767,57 @@ BlobmanTab:AddToggle({
     end
 })
 
--- 😈 追加機能 2: 自分自身へのnoclipトグル
+-- 😈 追加機能 2: 自分自身と乗り物へのnoclipトグル (修正版)
 local localNoclipCoroutine
 BlobmanTab:AddToggle({
-    Name = "自分にノー・クリップ",
-    Desc = "オンにすると、あなた自身が壁や地面をすり抜けます。",
+    Name = "自分と乗り物にノー・クリップ", -- 名前を更新
+    Desc = "オンにすると、あなた自身と、あなたが乗っている乗り物が壁や地面をすり抜けます。",
     Default = LocalNoclipEnabled,
     Color = Color3.fromRGB(255, 100, 0),
     Save = true,
     Flag = "LocalNoclipToggle",
     Callback = function(enabled)
         LocalNoclipEnabled = enabled
+        
+        -- ローカル関数で衝突を設定
+        local function setCanCollide(model, value)
+            if not model then return end
+            for _, part in pairs(model:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = value
+                end
+            end
+        end
+
+        -- 乗り物のモデルを取得する関数
+        local function getVehicleModel(humanoid)
+            if humanoid and humanoid.SeatPart then
+                -- SeatPartが乗り物のパーツ
+                local vehicle = U.FindFirstAncestorOfType(humanoid.SeatPart, "Model") 
+                -- SeatPartがModelの直下でない場合もあるため、Parentも考慮
+                if not vehicle then
+                    vehicle = humanoid.SeatPart.Parent
+                    -- ただし、CharacterがModelである場合があるので、Characterと異なるModelかを確認
+                    if vehicle == localPlayer.Character then
+                        return nil -- キャラクター自身は除外
+                    end
+                end
+                return vehicle
+            end
+            return nil
+        end
+        
         if enabled then
             localNoclipCoroutine = RunService.Heartbeat:Connect(function()
                 local char = localPlayer.Character
-                if char then
-                    for _, part in pairs(char:GetChildren()) do
-                        if part:IsA("BasePart") then
-                            part.CanCollide = false
-                        end
+                if char and char:FindFirstChild("Humanoid") then
+                    -- プレイヤー自身に適用
+                    setCanCollide(char, false)
+                    
+                    -- 乗り物に適用
+                    local vehicle = getVehicleModel(char.Humanoid)
+                    if vehicle then
+                        setCanCollide(vehicle, false)
                     end
                 end
             end)
@@ -1794,13 +1826,17 @@ BlobmanTab:AddToggle({
                 localNoclipCoroutine:Disconnect()
                 localNoclipCoroutine = nil
             end
+            
             -- クリーンアップ (衝突を元に戻す)
             local char = localPlayer.Character
-            if char then
-                for _, part in pairs(char:GetChildren()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = true
-                    end
+            if char and char:FindFirstChild("Humanoid") then
+                -- プレイヤー自身の衝突を戻す
+                setCanCollide(char, true)
+                
+                -- 乗り物の衝突を戻す
+                local vehicle = getVehicleModel(char.Humanoid)
+                if vehicle then
+                    setCanCollide(vehicle, true)
                 end
             end
         end
@@ -3214,17 +3250,7 @@ RunService.Heartbeat:Connect(function(dt)
         end
     end
     
-    -- 😈 Local Noclipの衝突処理（冗長性を確保）
-    if LocalNoclipEnabled then
-        local char = localPlayer.Character
-        if char then
-            for _, part in pairs(char:GetChildren()) do
-                if part:IsA("BasePart") and part.CanCollide then
-                    part.CanCollide = false
-                end
-            end
-        end
-    end
+    -- // 以前の LocalNoclipEnabled のロジックは Callback 関数内に移動しました
 end)
 
 
