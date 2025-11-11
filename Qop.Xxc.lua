@@ -51,7 +51,6 @@ local crouchSpeedCoroutine
 local anchorGrabCoroutine
 local poisonGrabCoroutine
 local ufoGrabCoroutine
-local burnPart
 local fireGrabCoroutine
 local noclipGrabCoroutine
 local antiKickCoroutine
@@ -766,7 +765,7 @@ end
 local function cleanupCompiledGroups()
     for _, groupData in ipairs(compiledGroups) do
         for _, data in ipairs(groupData.group) do
-            if data.part then
+            if data.part and data.part.Parent then
                 if data.part:FindFirstChild("BodyPosition") then
                     data.part.BodyPosition:Destroy()
                 end
@@ -1746,7 +1745,8 @@ BlobmanTab:AddToggle({
         if enabled then
             vehicleTPCoroutine = RunService.Heartbeat:Connect(function()
                 local char = localPlayer.Character
-                if char and char:FindFirstChild("Humanoid") and char.Humanoid.SeatPart then
+                if char and char:FindFirstChild("Humanoid") and char.Humanoid.SeatPart and char:FindFirstChild("HumanoidRootPart") then
+                    local hrp = char.HumanoidRootPart
                     local seat = char.Humanoid.SeatPart
                     local vehicle = U.FindFirstAncestorOfType(seat, "Model") or seat.Parent
                     
@@ -1754,7 +1754,10 @@ BlobmanTab:AddToggle({
                         local primaryPart = vehicle.PrimaryPart
                         -- 乗り物の真上にテレポート
                         local targetPosition = primaryPart.Position + Vector3.new(0, primaryPart.Size.Y / 2 + 3, 0)
-                        char.HumanoidRootPart.CFrame = CFrame.new(targetPosition)
+                        hrp.CFrame = CFrame.new(targetPosition)
+                        hrp.Anchored = true -- 落下を防ぐために一時的にアンカー
+                        RunService.Heartbeat:Wait() -- 1フレーム待機
+                        hrp.Anchored = false -- アンカーを解除
                     end
                 end
             end)
@@ -1762,6 +1765,11 @@ BlobmanTab:AddToggle({
             if vehicleTPCoroutine then
                 vehicleTPCoroutine:Disconnect()
                 vehicleTPCoroutine = nil
+            end
+            -- クリーンアップ: 乗り物TPがオフになったらアンカー解除を試みる
+            local char = localPlayer.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                char.HumanoidRootPart.Anchored = false
             end
         end
     end
@@ -1934,16 +1942,22 @@ local loopTpToggle = BlobmanTab:AddToggle({
                             pcall(function()
                                 hrp.CFrame = CFrame.new(targetPosition)
                             end)
+                            
+                            -- ⚠️ **落下防止のための一時的なアンカー処理を追加**
+                            hrp.Anchored = true
+                            
+                            -- 次のプレイヤーのインデックスを更新
+                            currentLoopTpPlayerIndex = currentLoopTpPlayerIndex + 1
+                            if currentLoopTpPlayerIndex > #filteredPlayers then
+                                currentLoopTpPlayerIndex = 1 -- 最初のプレイヤーに戻る
+                            end
+                            
+                            -- テレポート間隔で待機
+                            wait(_G.TPDelay)
+                            
+                            -- ⚠️ **アンカーを解除**
+                            hrp.Anchored = false
                         end
-
-                        -- 次のプレイヤーのインデックスを更新
-                        currentLoopTpPlayerIndex = currentLoopTpPlayerIndex + 1
-                        if currentLoopTpPlayerIndex > #filteredPlayers then
-                            currentLoopTpPlayerIndex = 1 -- 最初のプレイヤーに戻る
-                        end
-                        
-                        -- テレポート間隔で待機
-                        wait(_G.TPDelay)
                     else
                         -- プレイヤーがいない場合や、自分のキャラクターがない場合は少し待ってから再試行
                         wait(1) 
@@ -1956,6 +1970,10 @@ local loopTpToggle = BlobmanTab:AddToggle({
                 coroutine.close(loopTpCoroutine)
                 loopTpCoroutine = nil
                 currentLoopTpPlayerIndex = 1 -- インデックスをリセット
+            end
+            -- 落下防止のため、トグルOFF時にアンカー解除
+            if playerCharacter and playerCharacter:FindFirstChild("HumanoidRootPart") then
+                playerCharacter.HumanoidRootPart.Anchored = false
             end
         end
     end
