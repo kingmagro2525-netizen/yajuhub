@@ -74,6 +74,9 @@ local loopTpCoroutine
 local currentLoopTpPlayerIndex = 1
 local tpAllCoroutine -- TP All トグル用のコルーチン (未使用)
 _G.TPDelay = 0.5 -- 😈 新しいグローバル変数: TP間の遅延 (秒)
+-- 😈 追加機能用の新しいグローバル変数
+LocalNoclipEnabled = false -- 😈 noclipトグルの状態
+VehicleTPEnabled = false -- 😈 乗り物TPトグルの状態
 
 local decoyOffset = 15
 local stopDistance = 5
@@ -1729,6 +1732,81 @@ BlobmanTab:AddToggle({
     end
 })
 
+-- 😈 追加機能 1: 乗り物TPトグル
+local vehicleTPCoroutine 
+BlobmanTab:AddToggle({
+    Name = "乗り物へTP",
+    Desc = "オンにすると、乗っている乗り物（ブロブマン等）の真上にテレポートします。",
+    Default = VehicleTPEnabled,
+    Color = Color3.fromRGB(0, 255, 0),
+    Save = true,
+    Flag = "VehicleTPToggle",
+    Callback = function(enabled)
+        VehicleTPEnabled = enabled
+        if enabled then
+            vehicleTPCoroutine = RunService.Heartbeat:Connect(function()
+                local char = localPlayer.Character
+                if char and char:FindFirstChild("Humanoid") and char.Humanoid.SeatPart then
+                    local seat = char.Humanoid.SeatPart
+                    local vehicle = U.FindFirstAncestorOfType(seat, "Model") or seat.Parent
+                    
+                    if vehicle and vehicle:FindFirstChild("PrimaryPart") then
+                        local primaryPart = vehicle.PrimaryPart
+                        -- 乗り物の真上にテレポート
+                        local targetPosition = primaryPart.Position + Vector3.new(0, primaryPart.Size.Y / 2 + 3, 0)
+                        char.HumanoidRootPart.CFrame = CFrame.new(targetPosition)
+                    end
+                end
+            end)
+        else
+            if vehicleTPCoroutine then
+                vehicleTPCoroutine:Disconnect()
+                vehicleTPCoroutine = nil
+            end
+        end
+    end
+})
+
+-- 😈 追加機能 2: 自分自身へのnoclipトグル
+local localNoclipCoroutine
+BlobmanTab:AddToggle({
+    Name = "自分にノー・クリップ",
+    Desc = "オンにすると、あなた自身が壁や地面をすり抜けます。",
+    Default = LocalNoclipEnabled,
+    Color = Color3.fromRGB(255, 100, 0),
+    Save = true,
+    Flag = "LocalNoclipToggle",
+    Callback = function(enabled)
+        LocalNoclipEnabled = enabled
+        if enabled then
+            localNoclipCoroutine = RunService.Heartbeat:Connect(function()
+                local char = localPlayer.Character
+                if char then
+                    for _, part in pairs(char:GetChildren()) do
+                        if part:IsA("BasePart") then
+                            part.CanCollide = false
+                        end
+                    end
+                end
+            end)
+        else
+            if localNoclipCoroutine then
+                localNoclipCoroutine:Disconnect()
+                localNoclipCoroutine = nil
+            end
+            -- クリーンアップ (衝突を元に戻す)
+            local char = localPlayer.Character
+            if char then
+                for _, part in pairs(char:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
+                    end
+                end
+            end
+        end
+    end
+})
+
 
 BlobmanTab:AddToggle({
     Name = "投げ飛ばしモード (Yeet Mode)",
@@ -3117,7 +3195,7 @@ RunService.Heartbeat:Connect(function(dt)
     if AutoSitEnabled then
         local foundBlobman
         for _, v in pairs(game.Workspace:GetDescendants()) do
-            if v.Name == "CreatureBlobman" then
+            if v:IsA("Model") and v.Name == "CreatureBlobman" then
                 -- 車両のネットワーク所有者がLocalPlayerであることを確認する方が安全かもしれないが、ここでは単純化
                 foundBlobman = v
                 break
@@ -3132,6 +3210,18 @@ RunService.Heartbeat:Connect(function(dt)
             if VehicleSeat and Character and Character.Humanoid and Character.Humanoid.SeatPart == nil then
                 -- ブロブマンのSeatに座る
                 VehicleSeat:Sit(Character.Humanoid)
+            end
+        end
+    end
+    
+    -- 😈 Local Noclipの衝突処理（冗長性を確保）
+    if LocalNoclipEnabled then
+        local char = localPlayer.Character
+        if char then
+            for _, part in pairs(char:GetChildren()) do
+                if part:IsA("BasePart") and part.CanCollide then
+                    part.CanCollide = false
+                end
             end
         end
     end
