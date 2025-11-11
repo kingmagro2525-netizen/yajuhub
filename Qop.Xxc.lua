@@ -72,6 +72,8 @@ AutoSitEnabled = false
 LoopTpEnabled = false
 local loopTpCoroutine 
 local currentLoopTpPlayerIndex = 1
+local tpAllCoroutine -- TP All トグル用のコルーチン
+_G.TPDelay = 0.5 -- 😈 新しいグローバル変数: TP間の遅延 (秒)
 
 local decoyOffset = 15
 local stopDistance = 5
@@ -252,8 +254,7 @@ local ownedToys = {}
 local bombList = {}
 _G.ToyToLoad = "BombMissile"
 _G.MaxMissiles = 9
-_G.BlobmanDelay = 0.005
-
+_G.BlobmanDelay = 0.05 -- 0.005から0.05に変更してYeet Modeのデフォルト値を分かりやすく
 
 
 local function isDescendantOf(target, other)
@@ -1634,10 +1635,14 @@ local function blobGrabPlayerYeet(player, blobman)
         [2] = player.Character.HumanoidRootPart,
         [3] = weld
     }
+    
+    -- 掴む
     blobman:WaitForChild("BlobmanSeatAndOwnerScript"):WaitForChild("CreatureGrab"):FireServer(unpack(args))
     
     if yeetMode then
-        wait(0.05)
+        -- 投げ飛ばしモードがONの場合、掴んだ後すぐに解除（または再試行/高速な掴み/解除）を行う
+        -- このロジックが掴み/解除の繰り返しを実現していると解釈
+        wait(_G.BlobmanDelay) -- 投げ飛ばし速度スライダーの値を使用
         local releaseArgs = {
             [1] = detector,
             [2] = player.Character.HumanoidRootPart,
@@ -1692,7 +1697,7 @@ blobman1 = BlobmanTab:AddToggle({
                             if blobman and v ~= localPlayer then
                                 blobGrabPlayerYeet(v, blobman)
                                 print(v.Name)
-                                wait(_G.BlobmanDelay)
+                                wait(0.02) -- Yeet ModeがOFFの時はこの遅延で実行
                             end
                         end
                     end)
@@ -1749,7 +1754,7 @@ BlobmanTab:AddSlider({
     Color = Color3.fromRGB(240, 0, 0),
     ValueName = "秒",
     Increment = 0.001,
-    Default = 0.05,
+    Default = _G.BlobmanDelay,
     Callback = function(value)
         _G.BlobmanDelay = value
     end
@@ -1777,6 +1782,77 @@ BlobmanTab:AddToggle({
 })
 
 BlobmanTab:AddParagraph("使い方", "1. ブロブマンに乗る\n2. ループグラブオールをON\n3. 投げ飛ばしモードをONにすると相手がめちゃくちゃ飛びます")
+
+-- 😈 TP All 機能の追加
+BlobmanTab:AddParagraph("TP All 機能", "全プレイヤーを一人ずつ少し下にテレポートさせます。")
+
+local tpAllToggle = BlobmanTab:AddToggle({
+    Name = "TP All",
+    Color = Color3.fromRGB(0, 200, 255),
+    Default = false,
+    Callback = function(enabled)
+        if enabled then
+            tpAllCoroutine = coroutine.create(function()
+                while enabled do
+                    local playersToTP = Players:GetPlayers()
+                    -- 自分自身を除外
+                    local filteredPlayers = {}
+                    for _, player in ipairs(playersToTP) do
+                        if player ~= localPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                            table.insert(filteredPlayers, player)
+                        end
+                    end
+                    
+                    for _, player in ipairs(filteredPlayers) do
+                        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                            local hrp = player.Character.HumanoidRootPart
+                            -- プレイヤーの現在の位置から少し下の位置を計算
+                            local targetPosition = hrp.Position - Vector3.new(0, 1, 0)
+                            
+                            -- テレポート処理
+                            -- 通常、テレポートはCFrameを直接設定することで行います
+                            -- ただし、セキュリティ上の理由からCFrameの設定がブロックされる場合があるため、MoveToを使用する可能性も考慮しますが、ここではCFrameを設定します
+                            -- サーバー側の処理がないため、クライアント側で可能な限り動作させる
+                            
+                            -- ネットワーク所有権を取得してからテレポートを試みる（ほとんどの環境では無効なことが多いが、一応試みる）
+                            SetNetworkOwner:FireServer(hrp, hrp.CFrame)
+                            
+                            -- クライアント側のテレポート
+                            pcall(function()
+                                hrp.CFrame = CFrame.new(targetPosition)
+                            end)
+                            
+                            -- テレポート間隔で待機
+                            wait(_G.TPDelay)
+                        end
+                    end
+                    
+                    -- 全プレイヤーをテレポートした後、次のサイクルまで短い間隔で待機
+                    wait(0.1) 
+                end
+            end)
+            coroutine.resume(tpAllCoroutine)
+        else
+            if tpAllCoroutine then
+                coroutine.close(tpAllCoroutine)
+                tpAllCoroutine = nil
+            end
+        end
+    end
+})
+
+BlobmanTab:AddSlider({
+    Name = "TP Delay (秒)",
+    Min = 0.05,
+    Max = 3,
+    Color = Color3.fromRGB(0, 200, 255),
+    ValueName = "秒",
+    Increment = 0.05,
+    Default = _G.TPDelay,
+    Callback = function(value)
+        _G.TPDelay = value
+    end
+})
 
 AuraTab:AddLabel("オーラ")
 
@@ -2521,12 +2597,13 @@ KeybindSection:AddBind({
     Save = true,
     Flag = "BurnKeybind",
     Callback = function()
-        local mouse = localPlayer:GetMouse()
-        local target = mouse.Target
         if not ownedToys["Campfire"] then 
             OrionLib:MakeNotification({Name = "Missing toy", Content = "あなたはキャンプファイヤーを所有していません ", Image = "rbxassetid://4483345998", Time = 3})
             return
         end
+        local mouse = localPlayer:GetMouse()
+        local target = mouse.Target
+        
         if target and target:IsA("BasePart") then
             local character = U.FindFirstAncestorOfType(target, "Model")
             if target.Name == "FirePlayerPart" then
