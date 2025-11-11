@@ -74,8 +74,14 @@ local currentLoopTpPlayerIndex = 1
 local tpAllCoroutine -- TP All トグル用のコルーチン (未使用)
 _G.TPDelay = 0.5 -- 😈 新しいグローバル変数: TP間の遅延 (秒)
 -- 😈 追加機能用の新しいグローバル変数
-LocalNoclipEnabled = false -- 😈 noclipトグルの状態
+LocalNoclipEnabled = false -- 😈 noclipトグルの状態 (自分と乗り物用)
 VehicleTPEnabled = false -- 😈 乗り物TPトグルの状態
+-- 😈 BodyMover Noclip用の新しい変数
+BodyMoverNoclipEnabled = false
+local bodyMoverNoclipCoroutine
+local bodyMoverBodyVelocity
+local bodyMoverBodyPosition
+
 
 local decoyOffset = 15
 local stopDistance = 5
@@ -1775,10 +1781,10 @@ BlobmanTab:AddToggle({
     end
 })
 
--- 😈 追加機能 2: 自分自身と乗り物へのnoclipトグル (修正版)
+-- 😈 追加機能 2: 自分自身と乗り物へのnoclipトグル (CFrame版)
 local localNoclipCoroutine
 BlobmanTab:AddToggle({
-    Name = "自分と乗り物にノー・クリップ", -- 名前を更新
+    Name = "自分と乗り物にノー・クリップ (CFrame)", -- 名前を更新
     Desc = "オンにすると、あなた自身と、あなたが乗っている乗り物が壁や地面をすり抜けます。",
     Default = LocalNoclipEnabled,
     Color = Color3.fromRGB(255, 100, 0),
@@ -1851,6 +1857,111 @@ BlobmanTab:AddToggle({
     end
 })
 
+-- 😈 追加機能 3: BodyVelocityとBodyPositionを使ったNoclipトグル (ご要望の機能)
+BlobmanTab:AddToggle({
+    Name = "Noclip (BodyMovers)",
+    Desc = "BodyVelocityとBodyPositionを使って、衝突判定を無効にし、移動を制御します。",
+    Default = BodyMoverNoclipEnabled,
+    Color = Color3.fromRGB(0, 150, 255),
+    Save = true,
+    Flag = "BodyMoverNoclipToggle",
+    Callback = function(enabled)
+        BodyMoverNoclipEnabled = enabled
+        local char = localPlayer.Character
+        
+        if enabled then
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                local hrp = char.HumanoidRootPart
+                
+                -- プレイヤーのパーツの衝突を無効にする
+                for _, part in pairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+
+                -- BodyVelocityとBodyPositionを作成してHRPに追加
+                bodyMoverBodyVelocity = Instance.new("BodyVelocity")
+                bodyMoverBodyVelocity.MaxForce = Vector3.new(0, 0, 0) -- ゼロに設定
+                bodyMoverBodyVelocity.Parent = hrp
+                
+                bodyMoverBodyPosition = Instance.new("BodyPosition")
+                bodyMoverBodyPosition.P = 1000000 
+                bodyMoverBodyPosition.D = 125000 
+                bodyMoverBodyPosition.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                bodyMoverBodyPosition.Position = hrp.Position
+                bodyMoverBodyPosition.Parent = hrp
+                
+                -- メインループ
+                bodyMoverNoclipCoroutine = RunService.Heartbeat:Connect(function()
+                    if not BodyMoverNoclipEnabled or not hrp or not char.Humanoid then 
+                        return 
+                    end
+
+                    -- 移動方向の計算
+                    local moveDirection = char.Humanoid.MoveDirection
+                    local upVector = Vector3.new(0, 1, 0)
+                    local downVector = Vector3.new(0, -1, 0)
+                    local forwardVector = hrp.CFrame.LookVector
+                    
+                    local speed = char.Humanoid.WalkSpeed * 2 -- 移動速度の調整
+                    
+                    local targetVelocity = moveDirection * speed
+
+                    -- スペースキーで上昇、Cキーまたは左コントロールキーで下降のロジックをシミュレート
+                    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                        targetVelocity = targetVelocity + upVector * speed 
+                    elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.C) then
+                        targetVelocity = targetVelocity + downVector * speed
+                    end
+
+                    -- BodyVelocityを更新（移動力を制御）
+                    bodyMoverBodyVelocity.Velocity = targetVelocity
+                    
+                    -- HRPのCFrameを現在の位置に維持するためにBodyPositionを更新
+                    -- **BodyPositionのPとDを高く設定し、Targetを現在のHRPの位置にすることで、
+                    -- BodyVelocityの制御を優先しつつ、物理的な押し出しを防ぐ**
+                    bodyMoverBodyPosition.Position = hrp.Position
+                    
+                    -- BodyVelocityのMaxForceを更新（常に最大で押せるように）
+                    bodyMoverBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                end)
+            end
+        else
+            -- 😈 トグルOFF時のクリーンアップ
+            if bodyMoverNoclipCoroutine then
+                bodyMoverNoclipCoroutine:Disconnect()
+                bodyMoverNoclipCoroutine = nil
+            end
+            
+            if bodyMoverBodyVelocity and bodyMoverBodyVelocity.Parent then
+                bodyMoverBodyVelocity:Destroy()
+                bodyMoverBodyVelocity = nil
+            end
+            
+            if bodyMoverBodyPosition and bodyMoverBodyPosition.Parent then
+                bodyMoverBodyPosition:Destroy()
+                bodyMoverBodyPosition = nil
+            end
+            
+            -- プレイヤーのパーツの衝突を元に戻す
+            if char then
+                for _, part in pairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
+                    end
+                end
+            end
+            -- ⚠️ ノークリップオフ時に勝手に進む問題の修正:
+            -- BodyMoversが削除されたので、キャラクターには何も残らないはずです。
+            -- HumanoidRootPartの速度を強制的にゼロにする必要はないはずですが、念のため。
+            if char and char.HumanoidRootPart then
+                char.HumanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+                char.HumanoidRootPart.RotationalVelocity = Vector3.new(0, 0, 0)
+            end
+        end
+    end
+})
 
 BlobmanTab:AddToggle({
     Name = "投げ飛ばしモード (Yeet Mode)",
@@ -2846,7 +2957,7 @@ KeybindSection2:AddBind({
                     end
                 end
             end
-        end)
+        })
         spawnItemCf("BombMissile", playerCharacter.Head.CFrame or playerCharacter.HumanoidRootPart.CFrame)
         Debris:AddItem(connection, 2) -- 2秒後に接続を削除
     end
