@@ -72,7 +72,7 @@ AutoSitEnabled = false
 LoopTpEnabled = false
 local loopTpCoroutine 
 local currentLoopTpPlayerIndex = 1
-local tpAllCoroutine -- TP All トグル用のコルーチン
+local tpAllCoroutine -- TP All トグル用のコルーチン (未使用)
 _G.TPDelay = 0.5 -- 😈 新しいグローバル変数: TP間の遅延 (秒)
 
 local decoyOffset = 15
@@ -1783,19 +1783,20 @@ BlobmanTab:AddToggle({
 
 BlobmanTab:AddParagraph("使い方", "1. ブロブマンに乗る\n2. ループグラブオールをON\n3. 投げ飛ばしモードをONにすると相手がめちゃくちゃ飛びます")
 
--- 😈 TP All 機能の追加
-BlobmanTab:AddParagraph("TP All 機能", "全プレイヤーを一人ずつ少し下にテレポートさせます。")
+-- 😈 TP All 機能の代わりに Loop TP 機能を追加
+BlobmanTab:AddParagraph("Loop TP 機能", "あなたがプレイヤーにテレポートし、設定された遅延で次のプレイヤーに移ります。")
 
-local tpAllToggle = BlobmanTab:AddToggle({
-    Name = "TP All",
+local loopTpToggle = BlobmanTab:AddToggle({
+    Name = "Loop TP (一人ずつテレポート)",
     Color = Color3.fromRGB(0, 200, 255),
     Default = false,
     Callback = function(enabled)
+        LoopTpEnabled = enabled
         if enabled then
-            tpAllCoroutine = coroutine.create(function()
-                while enabled do
+            loopTpCoroutine = coroutine.create(function()
+                while LoopTpEnabled do
                     local playersToTP = Players:GetPlayers()
-                    -- 自分自身を除外
+                    -- 自分自身を除外、かつキャラクターを持つプレイヤーのみをフィルタリング
                     local filteredPlayers = {}
                     for _, player in ipairs(playersToTP) do
                         if player ~= localPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
@@ -1803,39 +1804,44 @@ local tpAllToggle = BlobmanTab:AddToggle({
                         end
                     end
                     
-                    for _, player in ipairs(filteredPlayers) do
-                        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                            local hrp = player.Character.HumanoidRootPart
-                            -- プレイヤーの現在の位置から少し下の位置を計算
-                            local targetPosition = hrp.Position - Vector3.new(0, 1, 0)
+                    if #filteredPlayers > 0 and playerCharacter and playerCharacter:FindFirstChild("HumanoidRootPart") then
+                        -- 次のプレイヤーを選択（循環させる）
+                        local targetPlayer = filteredPlayers[currentLoopTpPlayerIndex]
+                        
+                        local hrp = playerCharacter.HumanoidRootPart
+                        local targetHRP = targetPlayer.Character.HumanoidRootPart
+                        
+                        if targetHRP then
+                            -- ターゲットプレイヤーの現在位置を取得
+                            local targetPosition = targetHRP.Position
                             
-                            -- テレポート処理
-                            -- 通常、テレポートはCFrameを直接設定することで行います
-                            -- ただし、セキュリティ上の理由からCFrameの設定がブロックされる場合があるため、MoveToを使用する可能性も考慮しますが、ここではCFrameを設定します
-                            -- サーバー側の処理がないため、クライアント側で可能な限り動作させる
-                            
-                            -- ネットワーク所有権を取得してからテレポートを試みる（ほとんどの環境では無効なことが多いが、一応試みる）
-                            SetNetworkOwner:FireServer(hrp, hrp.CFrame)
-                            
-                            -- クライアント側のテレポート
+                            -- 自分をターゲットプレイヤーの位置にテレポート
+                            -- ネットワーク所有権は自分自身が持つため、直接CFrameを設定
                             pcall(function()
                                 hrp.CFrame = CFrame.new(targetPosition)
                             end)
-                            
-                            -- テレポート間隔で待機
-                            wait(_G.TPDelay)
                         end
+
+                        -- 次のプレイヤーのインデックスを更新
+                        currentLoopTpPlayerIndex = currentLoopTpPlayerIndex + 1
+                        if currentLoopTpPlayerIndex > #filteredPlayers then
+                            currentLoopTpPlayerIndex = 1 -- 最初のプレイヤーに戻る
+                        end
+                        
+                        -- テレポート間隔で待機
+                        wait(_G.TPDelay)
+                    else
+                        -- プレイヤーがいない場合や、自分のキャラクターがない場合は少し待ってから再試行
+                        wait(1) 
                     end
-                    
-                    -- 全プレイヤーをテレポートした後、次のサイクルまで短い間隔で待機
-                    wait(0.1) 
                 end
             end)
-            coroutine.resume(tpAllCoroutine)
+            coroutine.resume(loopTpCoroutine)
         else
-            if tpAllCoroutine then
-                coroutine.close(tpAllCoroutine)
-                tpAllCoroutine = nil
+            if loopTpCoroutine then
+                coroutine.close(loopTpCoroutine)
+                loopTpCoroutine = nil
+                currentLoopTpPlayerIndex = 1 -- インデックスをリセット
             end
         end
     end
