@@ -970,46 +970,103 @@ end
 
 -- 改善版 blobGrabPlayerTP 関数
 local blobalter = 1
-local function blobGrabPlayerTP(player, blobman)
-    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        local hrp = player.Character.HumanoidRootPart
+local function blobGrabPlayerTP(targetPlayer, blobman)
+    if not targetPlayer or targetPlayer == localPlayer or not targetPlayer.Character or not targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        return
+    end
 
-        -- プレイヤーのネットワークオーナーシップを取得
-        SetNetworkOwner:FireServer(hrp, hrp.CFrame)
-        task.wait(0.1)
-        
-        -- プレイヤーをBlobmanの位置にテレポート
-        if blobalter == 1 then
-            local leftDetector = blobman:FindFirstChild("LeftDetector")
-            if leftDetector then
-                hrp.CFrame = leftDetector.CFrame * CFrame.new(0, 0, -3)
-                task.wait(0.05)
-                
-                local args = {
-                    [1] = leftDetector,
-                    [2] = hrp,
-                    [3] = leftDetector:FindFirstChild("LeftWeld")
-                }
-                blobman:WaitForChild("BlobmanSeatAndOwnerScript"):WaitForChild("CreatureGrab"):FireServer(unpack(args))
-                blobalter = 2
-            end
-        else
-            local rightDetector = blobman:FindFirstChild("RightDetector")
-            if rightDetector then
-                hrp.CFrame = rightDetector.CFrame * CFrame.new(0, 0, -3)
-                task.wait(0.05)
-                
-                local args = {
-                    [1] = rightDetector,
-                    [2] = hrp,
-                    [3] = rightDetector:FindFirstChild("RightWeld")
-                }
-                blobman:WaitForChild("BlobmanSeatAndOwnerScript"):WaitForChild("CreatureGrab"):FireServer(unpack(args))
-                blobalter = 1
-            end
+    local targetHRP = targetPlayer.Character.HumanoidRootPart
+    local playerHRP = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+    if not playerHRP then return end
+    
+    -- プレイヤーのネットワークオーナーシップを取得（ここではターゲットではない）
+    -- SetNetworkOwner:FireServer(targetHRP, targetHRP.CFrame) -- これは元のコード
+    
+    -- **プレイヤーをターゲットの位置にテレポート**
+    local targetPos = targetHRP.CFrame
+    playerHRP.CFrame = targetPos * CFrame.new(0, 5, 0) -- ターゲットの上にテレポート
+    task.wait(_G.BlobmanDelay / 2)
+    
+    -- **Blobmanをターゲットの位置にテレポート**
+    local blobmanHRP = blobman.PrimaryPart or blobman:FindFirstChild("Head") or blobman:FindFirstChild("Body")
+    if blobmanHRP then
+        -- Blobmanの位置を微調整してプレイヤーの近くにする
+        blobmanHRP.CFrame = targetPos * CFrame.new(0, 1, 0)
+    end
+    task.wait(_G.BlobmanDelay / 2)
+
+
+    -- Blobmanの座席にターゲットを座らせる（掴む）処理
+    if blobalter == 1 then
+        local leftDetector = blobman:FindFirstChild("LeftDetector")
+        if leftDetector then
+            -- ターゲットのHRPをLeftDetectorの近くにテレポートさせる（座らせるための準備）
+            targetHRP.CFrame = leftDetector.CFrame * CFrame.new(0, 0, -3)
+            task.wait(0.05)
+            
+            local args = {
+                [1] = leftDetector,
+                [2] = targetHRP,
+                [3] = leftDetector:FindFirstChild("LeftWeld")
+            }
+            blobman:WaitForChild("BlobmanSeatAndOwnerScript"):WaitForChild("CreatureGrab"):FireServer(unpack(args))
+            blobalter = 2
+        end
+    else
+        local rightDetector = blobman:FindFirstChild("RightDetector")
+        if rightDetector then
+            -- ターゲットのHRPをRightDetectorの近くにテレポートさせる（座らせるための準備）
+            targetHRP.CFrame = rightDetector.CFrame * CFrame.new(0, 0, -3)
+            task.wait(0.05)
+            
+            local args = {
+                [1] = rightDetector,
+                [2] = targetHRP,
+                [3] = rightDetector:FindFirstChild("RightWeld")
+            }
+            blobman:WaitForChild("BlobmanSeatAndOwnerScript"):WaitForChild("CreatureGrab"):FireServer(unpack(args))
+            blobalter = 1
         end
     end
+    
+    -- 元のプレイヤーの位置に戻す（必要に応じて）
+    -- playerHRP.CFrame = targetPos * CFrame.new(0, 5, 0) -- ターゲットの上に留まる
 end
+
+-- **新しいLoopTP機能のロジック**
+local function loopTPFunction(blobman)
+    while true do
+        local playersToTarget = {}
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= localPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                table.insert(playersToTarget, p)
+            end
+        end
+
+        if #playersToTarget > 0 then
+            -- プレイヤーリストを順番に回る
+            local targetPlayer = playersToTarget[currentLoopTpPlayerIndex]
+
+            if targetPlayer then
+                blobGrabPlayerTP(targetPlayer, blobman)
+                print("Loop TP & Grabbed: " .. targetPlayer.Name)
+            end
+
+            -- 次のプレイヤーのインデックスを計算
+            currentLoopTpPlayerIndex = currentLoopTpPlayerIndex + 1
+            if currentLoopTpPlayerIndex > #playersToTarget then
+                currentLoopTpPlayerIndex = 1
+            end
+        else
+            -- ターゲットがいなければ待つ
+            wait(0.5)
+        end
+        
+        wait(_G.BlobmanDelay)
+    end
+end
+
 
 local version = getVersion()
 
@@ -1495,7 +1552,6 @@ end
 end
 end
 end
-end
 end)
 coroutine.resume(autoDefendCoroutine)
 else
@@ -1557,13 +1613,13 @@ end
 -- 改善版BlobmanTab
 local blobman1
 blobman1 = BlobmanTab:AddToggle({
-Name = "TP All & Loop Grab",
+Name = "Loop TP & Grab (Player to Target)", -- 名称変更
 Color = Color3.fromRGB(240, 0, 0),
 Default = false,
 Callback = function(enabled)
 if enabled then
 print("Toggle enabled")
-blobmanCoroutine = coroutine.create(function()
+loopTpCoroutine = coroutine.create(function() -- ループTP用のコルーチンを使用
 local foundBlobman = false
 for i, v in pairs(game.Workspace:GetDescendants()) do
 if v.Name == "CreatureBlobman" then
@@ -1588,30 +1644,19 @@ Time = 5
 })
 blobman1:Set(false)
 blobman = nil
-coroutine.close(blobmanCoroutine)
-blobmanCoroutine = nil
+coroutine.close(loopTpCoroutine) -- 修正後のコルーチンをクローズ
+loopTpCoroutine = nil
 return
 end
 
-while true do
-pcall(function()
-while wait(_G.BlobmanDelay) do
-for i, v in pairs(Players:GetChildren()) do
-if blobman and v ~= localPlayer and v.Character then
-blobGrabPlayerTP(v, blobman)
-print("TP & Grabbed: " .. v.Name)
-end
-end
-end
+currentLoopTpPlayerIndex = 1 -- ループ開始時にインデックスをリセット
+loopTPFunction(blobman) -- 新しいループTP関数を呼び出す
 end)
-wait(0.02)
-end
-end)
-coroutine.resume(blobmanCoroutine)
+coroutine.resume(loopTpCoroutine)
 else
-if blobmanCoroutine then
-coroutine.close(blobmanCoroutine)
-blobmanCoroutine = nil
+if loopTpCoroutine then
+coroutine.close(loopTpCoroutine)
+loopTpCoroutine = nil
 blobman = nil
 end
 end
@@ -2819,8 +2864,7 @@ end)
 -- 😈 終了処理
 game:GetService("Players").PlayerRemoving:Connect(function(player)
     if player == localPlayer then
-        if blobmanCoroutine then coroutine.close(blobmanCoroutine) end
-        if loopTpCoroutine then coroutine.close(loopTpCoroutine) end
+        if loopTpCoroutine then coroutine.close(loopTpCoroutine) end -- 修正後のコルーチン名
         -- その他のコルーチンや接続もクリーンアップ
     end
 end)
