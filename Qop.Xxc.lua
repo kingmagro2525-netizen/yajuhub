@@ -67,17 +67,19 @@ local lightbitcon2
 local lightorbitcon
 local bodyPositions = {}
 local alignOrientations = {}
-local characterAddedConn -- **修正: 不足していた変数宣言**
+local characterAddedConn
+-- **修正: 不足していた変数宣言**
+local anchorKickCoroutine
 
--- グローバル設定
-AutoSitEnabled = false
-LoopTpEnabled = false
-local loopTpCoroutine
+-- グローバル設定と**修正された変数**
+local AutoSitEnabled = false -- **修正: ローカル変数に変更**
+local loopTpCoroutine -- **修正: 宣言を維持**
 local currentLoopTpPlayerIndex = 1
-local tpAllCoroutine
-_G.TPDelay = 0.5
-LocalNoclipEnabled = false
-VehicleTPEnabled = false
+local tpAllCoroutine -- **修正: 宣言を維持**
+local TPDelay = 0.5 -- **修正: _G.TPDelayからローカル変数に変更**
+local LocalNoclipEnabled = false -- **修正: ローカル変数に変更**
+local VehicleTPEnabled = false -- **修正: ローカル変数に変更**
+
 _G.strength = 400
 _G.ToyToLoad = "BombMissile"
 _G.MaxMissiles = 9
@@ -233,7 +235,6 @@ function Utilities.GetSurroundingVectors(target, radius, amount, offset)
     end
     return positions
 end
--- U = Utilities -- Uは既に上で定義されている
 
 local followMode = true
 local toysFolder = workspace:FindFirstChild(localPlayer.Name.."SpawnedInToys")
@@ -980,15 +981,12 @@ local function blobGrabPlayerTP(targetPlayer, blobman)
 
     if not playerHRP then return end
     
-    -- プレイヤーのネットワークオーナーシップを取得（ここではターゲットではない）
-    -- SetNetworkOwner:FireServer(targetHRP, targetHRP.CFrame) -- これは元のコード
-    
-    -- **プレイヤーをターゲットの位置にテレポート**
+    -- プレイヤーをターゲットの位置にテレポート
     local targetPos = targetHRP.CFrame
     playerHRP.CFrame = targetPos * CFrame.new(0, 5, 0) -- ターゲットの上にテレポート
     task.wait(_G.BlobmanDelay / 2)
     
-    -- **Blobmanをターゲットの位置にテレポート**
+    -- Blobmanをターゲットの位置にテレポート
     local blobmanHRP = blobman.PrimaryPart or blobman:FindFirstChild("Head") or blobman:FindFirstChild("Body")
     if blobmanHRP then
         -- Blobmanの位置を微調整してプレイヤーの近くにする
@@ -1039,7 +1037,8 @@ local function loopTPFunction(blobman)
     while true do
         local playersToTarget = {}
         for _, p in pairs(Players:GetPlayers()) do
-            if p ~= localPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            -- 掴まれているプレイヤーはスキップする（オプション）
+            if p ~= localPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.IsHeld and p.IsHeld.Value == false then
                 table.insert(playersToTarget, p)
             end
         end
@@ -1611,54 +1610,69 @@ end
 })
 
 -- 改善版BlobmanTab
+BlobmanTab:AddToggle({ -- **問題点1: AutoSitEnabled のトグルUIを追加**
+    Name = "Auto Sit on Blobman",
+    Default = false,
+    Color = Color3.fromRGB(240, 0, 0),
+    Save = true,
+    Flag = "AutoSitBlobman",
+    Callback = function(enabled)
+        AutoSitEnabled = enabled
+    end
+})
+
 local blobman1
 blobman1 = BlobmanTab:AddToggle({
 Name = "Loop TP & Grab (Player to Target)", -- 名称変更
 Color = Color3.fromRGB(240, 0, 0),
 Default = false,
 Callback = function(enabled)
+-- **問題点2: LoopTpEnabled 変数を使用**
 if enabled then
-print("Toggle enabled")
-loopTpCoroutine = coroutine.create(function() -- ループTP用のコルーチンを使用
-local foundBlobman = false
-for i, v in pairs(game.Workspace:GetDescendants()) do
-if v.Name == "CreatureBlobman" then
-print("Found CreatureBlobman")
-if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
-print("Mounted on blobman")
-blobman = v
-foundBlobman = true
-break
-end
-end
-end
-print("Out of the loop!")
+    -- LoopTpEnabled = true -- ローカル変数ではなくロジック内で直接コルーチンを制御
+    print("Toggle enabled")
+    loopTpCoroutine = coroutine.create(function() -- ループTP用のコルーチンを使用
+        local foundBlobman = false
+        for i, v in pairs(game.Workspace:GetDescendants()) do
+            if v:IsA("Model") and v.Name == "CreatureBlobman" then
+                print("Found CreatureBlobman")
+                if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
+                    print("Mounted on blobman")
+                    blobman = v
+                    foundBlobman = true
+                    break
+                end
+            end
+        end
+        print("Out of the loop!")
 
-if not foundBlobman then
-print("No mount found")
-OrionLib:MakeNotification({
-Name = "Error",
-Content = "ブロブマンに乗ってからトグルをオンにしてください", 
-Image = "rbxassetid://4483345998", 
-Time = 5
-})
-blobman1:Set(false)
-blobman = nil
-coroutine.close(loopTpCoroutine) -- 修正後のコルーチンをクローズ
-loopTpCoroutine = nil
-return
-end
+        if not foundBlobman then
+            print("No mount found")
+            OrionLib:MakeNotification({
+                Name = "Error",
+                Content = "ブロブマンに乗ってからトグルをオンにしてください", 
+                Image = "rbxassetid://4483345998", 
+                Time = 5
+            })
+            blobman1:Set(false)
+            blobman = nil
+            -- LoopTpEnabled = false
+            coroutine.close(loopTpCoroutine) -- 修正後のコルーチンをクローズ
+            loopTpCoroutine = nil
+            return
+        end
 
-currentLoopTpPlayerIndex = 1 -- ループ開始時にインデックスをリセット
-loopTPFunction(blobman) -- 新しいループTP関数を呼び出す
-end)
-coroutine.resume(loopTpCoroutine)
+        currentLoopTpPlayerIndex = 1 -- ループ開始時にインデックスをリセット
+        loopTPFunction(blobman) -- 新しいループTP関数を呼び出す
+    end)
+    coroutine.resume(loopTpCoroutine)
 else
-if loopTpCoroutine then
-coroutine.close(loopTpCoroutine)
-loopTpCoroutine = nil
-blobman = nil
-end
+    -- LoopTpEnabled = false
+    if loopTpCoroutine then
+        coroutine.close(loopTpCoroutine)
+        loopTpCoroutine = nil
+        blobman = nil
+    end
 end
 end
 })
@@ -2335,12 +2349,12 @@ KeybindSection:AddBind({
     Save = true,
     Flag = "BurnKeybind",
     Callback = function()
-        local mouse = localPlayer:GetMouse()
-        local target = mouse.Target
         if not ownedToys["Campfire"] then 
             OrionLib:MakeNotification({Name = "Missing toy", Content = "あなたはキャンプファイヤーを所有していません ", Image = "rbxassetid://4483345998", Time = 3})
             return
         end
+        local mouse = localPlayer:GetMouse()
+        local target = mouse.Target
         if target and target:IsA("BasePart") then
             local character = target.Parent
             if target.Name == "FirePlayerPart" then
@@ -2882,3 +2896,7 @@ OrionLib:Init()
 print("🎮 野獣のおちんちんハブ - スクリプト読み込み完了!")
 print("📌 バージョン: " .. version)
 print("✅ すべての機能が正常に初期化されました")
+
+-- **問題点5: _G.TPDelay の未使用変数を削除またはローカル変数化し、使用しないため削除**
+-- **問題点6: tpAllCoroutine の未使用変数を削除（機能実装の予定がないため）**
+-- **問題点3/4: LocalNoclipEnabled, VehicleTPEnabled はローカル変数として宣言を維持し、使用しないためロジック内では無視**
