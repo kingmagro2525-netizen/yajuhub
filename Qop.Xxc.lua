@@ -207,7 +207,7 @@ end
 
 local function getVersion()
     local success, response = pcall(function()
-        return game:HttpGet("https://raw.githubusercontent.com/kingmagro2525-netizen/yajuhub/main/Qop.Xxc.version.lua")
+        return game:HttpGet("https://raw.githubusercontent.com/kingmagro2525-netizen/yajuhub/refs/heads/main/Qop.Xxc.version.lua")
     end)
     if success then
         local data = HttpService:JSONDecode(response)
@@ -902,7 +902,7 @@ for _, v in pairs(whitelistIds) do
     end
 end
 
-local localVersion = "1-beta"
+local localVersion = "1"
 if localVersion ~= version then
     OrionLib:MakeNotification({Name = "スクリプトバージョンが違います!", Content = "あなたは野獣のおちんちんハブの古いバージョンを使っているため開けません", Image = "rbxassetid://4483345998", Time = 8})  
     setclipboard('loadstring(game:HttpGet("https://raw.githubusercontent.com/Undebolted/FTAP/main/Script.lua",true))()')
