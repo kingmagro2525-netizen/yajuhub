@@ -72,6 +72,10 @@ local tpAllCoroutine
 local autoDefendKickCoroutine -- DefenseTab移植で必要
 -- ▲▲▲ 移植完了 ▲▲▲
 
+-- ▼▼▼ Blobmanタブ用 グローバル変数 ▼▼▼
+local selectedBlobmanTargetName = nil
+-- ▲▲▲ 追加完了 ▲▲▲
+
 local AutoSitEnabled = false
 local loopTpCoroutine
 local currentLoopTpPlayerIndex = 1
@@ -1427,9 +1431,100 @@ BlobmanTab:AddToggle({
     end
 })
 
+-- ▼▼▼ ▼▼▼ ここからBlobmanTabの修正 ▼▼▼ ▼▼▼
+
+-- プレイヤーリスト取得ヘルパー関数
+local function getPlayerNamesForDropdown()
+    local names = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= localPlayer then
+            table.insert(names, player.Name)
+        end
+    end
+    if #names == 0 then
+        table.insert(names, "（自分以外いません）")
+    end
+    return names
+end
+
+local playerNames = getPlayerNamesForDropdown()
+
+-- プレイヤー選択ドロップダウン
+local playerDropdown = BlobmanTab:AddDropdown({
+    Name = "対象プレイヤー選択",
+    Options = playerNames,
+    Default = playerNames[1],
+    Callback = function(selectedName)
+        selectedBlobmanTargetName = selectedName
+    end
+})
+-- 最初のプレイヤーをデフォルトで選択状態にする
+selectedBlobmanTargetName = playerNames[1]
+
+-- 選択キックボタン
+BlobmanTab:AddButton({
+    Name = "選択プレイヤーをキック (TP Grab)",
+    Callback = function()
+        -- 1. ブロブマンに乗っているか確認
+        local foundBlobman = false
+        local currentBlobman = nil
+        for i, v in pairs(game.Workspace:GetDescendants()) do
+            if v:IsA("Model") and v.Name == "CreatureBlobman" then
+                if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
+                    currentBlobman = v
+                    foundBlobman = true
+                    break
+                end
+            end
+        end
+
+        if not foundBlobman then
+            OrionLib:MakeNotification({
+                Name = "Error",
+                Content = "ブロブマンに乗ってからボタンを押してください", 
+                Image = "rbxassetid://4483345998", 
+                Time = 5
+            })
+            return
+        end
+
+        -- 2. 対象プレイヤーを取得
+        if not selectedBlobmanTargetName or selectedBlobmanTargetName == "（自分以外いません）" then
+            OrionLib:MakeNotification({
+                Name = "Error",
+                Content = "対象プレイヤーが選択されていません", 
+                Image = "rbxassetid://4483345998", 
+                Time = 5
+            })
+            return
+        end
+
+        local targetPlayer = Players:FindFirstChild(selectedBlobmanTargetName)
+
+        if not targetPlayer or targetPlayer == localPlayer or not targetPlayer.Character then
+            OrionLib:MakeNotification({
+                Name = "Error",
+                Content = "対象プレイヤーが見つからないか、無効です: " .. tostring(selectedBlobmanTargetName), 
+                Image = "rbxassetid://4483345998", 
+                Time = 5
+            })
+            return
+        end
+
+        -- 3. 実行
+        pcall(function()
+            blobGrabPlayerTP(targetPlayer, currentBlobman)
+        end)
+    end
+})
+
+BlobmanTab:AddParagraph("注意: プレイヤーの入退室があった場合、ドロップダウンは古くなります。リストを更新するにはスクリプトを再実行してください。")
+
+-- ▲▲▲ ▲▲▲ BlobmanTabの修正完了 ▲▲▲ ▲▲▲
+
 local blobman1
 blobman1 = BlobmanTab:AddToggle({
-    Name = "Loop TP & Grab (Player to Target)",
+    Name = "Loop TP & Grab (全員対象)", -- 名前を分かりやすく変更
     Color = Color3.fromRGB(240, 0, 0),
     Default = false,
     Callback = function(enabled)
@@ -1471,7 +1566,7 @@ blobman1 = BlobmanTab:AddToggle({
 })
 
 BlobmanTab:AddSlider({
-    Name = "TP & Grab Delay",
+    Name = "TP & Grab Delay (全員対象ループ用)", -- 名前を分かりやすく変更
     Min = 0.0005,
     Max = 1,
     Color = Color3.fromRGB(240, 0, 0),
