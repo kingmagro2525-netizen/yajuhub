@@ -74,7 +74,8 @@ local autoDefendKickCoroutine -- DefenseTab移植で必要
 
 -- ▼▼▼ Blobmanタブ用 グローバル変数 ▼▼▼
 local selectedBlobmanTargetName = nil
--- ▲▲▲ 追加完了 ▲▲▲
+local blobmanPlayerDropdown -- ドロップダウンオブジェクトを保持するための変数
+-- ▲▲▲ 追加・修正完了 ▲▲▲
 
 local AutoSitEnabled = false
 local loopTpCoroutine
@@ -176,21 +177,68 @@ end
 local poisonHurtParts = getDescendantParts("PoisonHurtPart")
 local paintPlayerParts = getDescendantParts("PaintPlayerPart")
 
-local function onPlayerAdded(player)
-    table.insert(playerList, player.Name)
+-- ▼▼▼ Blobmanタブ用のプレイヤーリスト更新関数 ▼▼▼
+-- プレイヤー名を「表示名(ユーザーID)」形式で取得
+local function getPlayerNamesForDropdown()
+    local names = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= localPlayer then
+            -- 形式を「表示名(ユーザーID)」に修正
+            table.insert(names, player.Name .. " (" .. player.UserId .. ")")
+        end
+    end
+    if #names == 0 then
+        table.insert(names, "（自分以外いません）")
+    end
+    return names
 end
 
-local function onPlayerRemoving(player)
-    for i, name in ipairs(playerList) do
-        if name == player.Name then
-            table.remove(playerList, i)
-            break
+-- プレイヤーリストを更新し、ドロップダウンを再設定する関数
+local function updateBlobmanDropdown()
+    local newNames = getPlayerNamesForDropdown()
+    
+    -- ドロップダウンが存在し、かつプレイヤーが1人以上いる場合
+    if blobmanPlayerDropdown and #newNames > 0 and newNames[1] ~= "（自分以外いません）" then
+        blobmanPlayerDropdown:SetOptions(newNames)
+        
+        -- 現在の選択肢が新しいリストに存在しない場合は、最初の要素を選択する
+        local isSelectedTargetStillExists = false
+        for _, name in ipairs(newNames) do
+            if name == selectedBlobmanTargetName then
+                isSelectedTargetStillExists = true
+                break
+            end
         end
+
+        if not isSelectedTargetStillExists then
+            selectedBlobmanTargetName = newNames[1]
+            blobmanPlayerDropdown:Set(newNames[1])
+        end
+    elseif blobmanPlayerDropdown then
+        -- プレイヤーがいない場合は「（自分以外いません）」のみにする
+        blobmanPlayerDropdown:SetOptions(newNames)
+        selectedBlobmanTargetName = newNames[1]
+        blobmanPlayerDropdown:Set(newNames[1])
     end
 end
 
-Players.PlayerAdded:Connect(onPlayerAdded)
-Players.PlayerRemoving:Connect(onPlayerRemoving)
+-- PlayerAdded, PlayerRemovingイベントでリストを自動更新
+Players.PlayerAdded:Connect(function(player)
+    task.wait(0.5) -- プレイヤーのキャラクターが完全にロードされるのを待つ
+    updateBlobmanDropdown()
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    updateBlobmanDropdown()
+end)
+
+-- 既存の onPlayerAdded/onPlayerRemoving は使用しないため削除
+-- local function onPlayerAdded(player) ... end
+-- local function onPlayerRemoving(player) ... end
+-- Players.PlayerAdded:Connect(onPlayerAdded)
+-- Players.PlayerRemoving:Connect(onPlayerRemoving)
+-- ▲▲▲ Blobmanタブ用のプレイヤーリスト修正・自動更新処理完了 ▲▲▲
+
 
 for i, v in pairs(localPlayer:WaitForChild("PlayerGui"):WaitForChild("MenuGui"):WaitForChild("Menu"):WaitForChild("TabContents"):WaitForChild("Toys"):WaitForChild("Contents"):GetChildren()) do
     if v.Name ~= "UIGridLayout" then
@@ -223,7 +271,7 @@ end
 
 -- ▼▼▼ 削除: getVersion() 関数 ▼▼▼
 -- local function getVersion() ... end
--- ▲▲▲ 削除完了 ▲▲▲
+-- ▲▲▲ 削除完了 ▼▼▼
 
 local function spawnItem(itemName, position, orientation)
     task.spawn(function()
@@ -829,6 +877,24 @@ local function blobGrabPlayerTP(targetPlayer, blobman)
     local targetHRP = targetPlayer.Character.HumanoidRootPart
     local playerHRP = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not playerHRP then return end
+    
+    -- プレイヤー名からユーザーIDを抽出してPlayerオブジェクトを取得
+    local targetPlayerName = targetPlayer.Name 
+    local targetPlayerObject = Players:FindFirstChild(targetPlayerName)
+    
+    if not targetPlayerObject or not targetPlayerObject.Character then return end
+    
+    -- プレイヤーが掴まれていないかチェック
+    if targetPlayerObject.IsHeld and targetPlayerObject.IsHeld.Value == true then
+        OrionLib:MakeNotification({
+            Name = "Info",
+            Content = targetPlayerName .. " は既に掴まれています。", 
+            Image = "rbxassetid://4483345998", 
+            Time = 3
+        })
+        return
+    end
+
     local targetPos = targetHRP.CFrame
     playerHRP.CFrame = targetPos * CFrame.new(0, 5, 0)
     task.wait(_G.BlobmanDelay / 2)
@@ -837,6 +903,8 @@ local function blobGrabPlayerTP(targetPlayer, blobman)
         blobmanHRP.CFrame = targetPos * CFrame.new(0, 1, 0)
     end
     task.wait(_G.BlobmanDelay / 2)
+    
+    -- グロブマンの掴みロジックを修正
     if blobalter == 1 then
         local leftDetector = blobman:FindFirstChild("LeftDetector")
         if leftDetector then
@@ -847,8 +915,14 @@ local function blobGrabPlayerTP(targetPlayer, blobman)
                 [2] = targetHRP,
                 [3] = leftDetector:FindFirstChild("LeftWeld")
             }
-            blobman:WaitForChild("BlobmanSeatAndOwnerScript"):WaitForChild("CreatureGrab"):FireServer(unpack(args))
-            blobalter = 2
+            local script = blobman:WaitForChild("BlobmanSeatAndOwnerScript", 0.5)
+            if script then
+                local creatureGrab = script:WaitForChild("CreatureGrab", 0.5)
+                if creatureGrab then
+                    creatureGrab:FireServer(unpack(args))
+                    blobalter = 2
+                end
+            end
         end
     else
         local rightDetector = blobman:FindFirstChild("RightDetector")
@@ -860,8 +934,14 @@ local function blobGrabPlayerTP(targetPlayer, blobman)
                 [2] = targetHRP,
                 [3] = rightDetector:FindFirstChild("RightWeld")
             }
-            blobman:WaitForChild("BlobmanSeatAndOwnerScript"):WaitForChild("CreatureGrab"):FireServer(unpack(args))
-            blobalter = 1
+            local script = blobman:WaitForChild("BlobmanSeatAndOwnerScript", 0.5)
+            if script then
+                local creatureGrab = script:WaitForChild("CreatureGrab", 0.5)
+                if creatureGrab then
+                    creatureGrab:FireServer(unpack(args))
+                    blobalter = 1
+                end
+            end
         end
     end
 end
@@ -892,7 +972,7 @@ end
 
 -- ▼▼▼ 削除: バージョン取得とチェック ▼▼▼
 -- local version = getVersion() 
--- ▲▲▲ 削除完了 ▲▲▲
+-- ▲▲▲ 削除完了 ▼▼▼
 
 local whitelistIdsStr = game:HttpGet("https://raw.githubusercontent.com/Undebolted/FTAP/main/WhitelistedUserId.txt")
 local whitelistIdsTbl = HttpService:JSONDecode(whitelistIdsStr)
@@ -917,7 +997,7 @@ end
 -- if localVersion ~= version then
 --    ...
 -- end
--- ▲▲▲ 削除完了 ▲▲▲
+-- ▲▲▲ 削除完了 ▼▼▼
 
 local Window = OrionLib:MakeWindow({
     Name = "野獣のおちんちんハブ", -- 修正: version変数を削除
@@ -1431,26 +1511,12 @@ BlobmanTab:AddToggle({
     end
 })
 
--- ▼▼▼ ▼▼▼ ここからBlobmanTabの修正 ▼▼▼ ▼▼▼
-
--- プレイヤーリスト取得ヘルパー関数
-local function getPlayerNamesForDropdown()
-    local names = {}
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= localPlayer then
-            table.insert(names, player.Name)
-        end
-    end
-    if #names == 0 then
-        table.insert(names, "（自分以外いません）")
-    end
-    return names
-end
+-- ▼▼▼ Blobmanタブの修正 (自動更新対応) ▼▼▼
 
 local playerNames = getPlayerNamesForDropdown()
 
 -- プレイヤー選択ドロップダウン
-local playerDropdown = BlobmanTab:AddDropdown({
+blobmanPlayerDropdown = BlobmanTab:AddDropdown({ -- グローバル変数に代入
     Name = "対象プレイヤー選択",
     Options = playerNames,
     Default = playerNames[1],
@@ -1498,8 +1564,29 @@ BlobmanTab:AddButton({
             })
             return
         end
+        
+        -- ドロップダウンの表示形式「名前 (UserID)」からPlayerオブジェクトを取得
+        local playerNameWithId = selectedBlobmanTargetName
+        local startIndex = playerNameWithId:find("%s(%d+)%")
+        local userIdStr = startIndex and playerNameWithId:sub(startIndex + 1, -2)
+        local targetPlayer = nil
+        
+        if userIdStr then
+            local userId = tonumber(userIdStr)
+            for _, player in pairs(Players:GetPlayers()) do
+                if player.UserId == userId then
+                    targetPlayer = player
+                    break
+                end
+            end
+        end
+        
+        -- ユーザーIDが取得できない、またはプレイヤーが見つからない場合のフォールバック（表示名のみ）
+        if not targetPlayer then
+            local playerName = playerNameWithId:match("^(.*)%s%(") or playerNameWithId
+            targetPlayer = Players:FindFirstChild(playerName)
+        end
 
-        local targetPlayer = Players:FindFirstChild(selectedBlobmanTargetName)
 
         if not targetPlayer or targetPlayer == localPlayer or not targetPlayer.Character then
             OrionLib:MakeNotification({
@@ -1518,9 +1605,15 @@ BlobmanTab:AddButton({
     end
 })
 
-BlobmanTab:AddParagraph("注意: プレイヤーの入退室があった場合、ドロップダウンは古くなります。リストを更新するにはスクリプトを再実行してください。")
+BlobmanTab:AddParagraph("注意: プレイヤーの入退室があった場合、リストは自動で更新されます。")
 
--- ▲▲▲ ▲▲▲ BlobmanTabの修正完了 ▲▲▲ ▲▲▲
+-- 手動更新ボタンを追加 (自動更新が失敗した場合のフォールバック)
+BlobmanTab:AddButton({
+    Name = "プレイヤーリストを更新",
+    Callback = updateBlobmanDropdown
+})
+
+-- ▲▲▲ BlobmanTabの修正完了 ▲▲▲
 
 local blobman1
 blobman1 = BlobmanTab:AddToggle({
@@ -2296,12 +2389,12 @@ KeybindSection:AddBind({
     Save = true,
     Flag = "BurnKeybind",
     Callback = function()
-        local mouse = localPlayer:GetMouse()
-        local target = mouse.Target
         if not ownedToys["Campfire"] then 
             OrionLib:MakeNotification({Name = "Missing toy", Content = "あなたはキャンプファイヤーを所有していません ", Image = "rbxassetid://4483345998", Time = 3})
             return
         end
+        local mouse = localPlayer:GetMouse()
+        local target = mouse.Target
         if target and target:IsA("BasePart") then
             local character = target.Parent
             if target.Name == "FirePlayerPart" then
@@ -2497,7 +2590,7 @@ KeybindSection2:AddBind({
                 ["ImpactSpeed"] = 100,
                 ["ExplodesByPointy"] = false,
                 ["DestroysModel"] = false,
-                ["PositionPart"] = localPlayer.Character.HumanoidRootPart or localPlayer.Character.PrimaryPart
+                    ["PositionPart"] = localPlayer.Character.HumanoidRootPart or localPlayer.Character.PrimaryPart
             },
             [2] = localPlayer.Character.HumanoidRootPart.Position or localPlayer.Character.PrimaryPart.Position
         }
@@ -2550,7 +2643,10 @@ KeybindSection2:AddBind({
             return
         end
         local nearest = getNearestPlayer() -- 修正: 先にプレイヤー取得
-        if not nearest then return end -- 修正: プレイヤーが見つからない場合は終了
+        if not nearest or not nearest.Character then 
+            OrionLib:MakeNotification({Name = "Error", Content = "最も近いプレイヤーが見つかりませんでした", Image = "rbxassetid://4483345998", Time = 2})
+            return 
+        end
         local char = nearest.Character
         for i = #bombList, 1, -1 do
             local bomb = table.remove(bombList, i)
@@ -2799,8 +2895,8 @@ OrionLib:MakeNotification({
 
 OrionLib:Init()
 
+-- スクリプト起動時に一度ドロップダウンを初期化
+updateBlobmanDropdown()
+
 print("🎮 野獣のおちんちんハブ - スクリプト読み込み完了!")
--- ▼▼▼ 削除: バージョン表示 ▼▼▼
--- print("📌 バージョン: " .. version)
--- ▲▲▲ 削除完了 ▲▲▲
 print("✅ すべての機能が正常に初期化されました")
