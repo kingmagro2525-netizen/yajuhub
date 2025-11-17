@@ -217,18 +217,9 @@ local function cleanupConnections(connectionTable)
     end
 end
 
-local function getVersion()
-    local success, response = pcall(function()
-        return game:HttpGet("https://raw.githubusercontent.com/kingmagro2525-netizen/yajuhub/main/Qop.Xxc.version.lua")
-    end)
-    if success then
-        local data = HttpService:JSONDecode(response)
-        return data.version
-    else
-        warn("Failed to get version: " .. tostring(response))
-        return "Unknown"
-    end
-end
+-- ▼▼▼ 削除: getVersion() 関数 ▼▼▼
+-- local function getVersion() ... end
+-- ▲▲▲ 削除完了 ▲▲▲
 
 local function spawnItem(itemName, position, orientation)
     task.spawn(function()
@@ -894,7 +885,10 @@ local function loopTPFunction(blobman)
         wait(_G.BlobmanDelay)
     end
 end
-local version = getVersion()
+
+-- ▼▼▼ 削除: バージョン取得とチェック ▼▼▼
+-- local version = getVersion() 
+-- ▲▲▲ 削除完了 ▲▲▲
 
 local whitelistIdsStr = game:HttpGet("https://raw.githubusercontent.com/Undebolted/FTAP/main/WhitelistedUserId.txt")
 local whitelistIdsTbl = HttpService:JSONDecode(whitelistIdsStr)
@@ -914,22 +908,20 @@ for _, v in pairs(whitelistIds) do
     end
 end
 
-local localVersion = "1-beta"
-if localVersion ~= version then
-    OrionLib:MakeNotification({Name = "スクリプトバージョンが違います!", Content = "あなたは野獣のおちんちんハブの古いバージョンを使っているため開けません", Image = "rbxassetid://4483345998", Time = 8})  
-    setclipboard('loadstring(game:HttpGet("https://raw.githubusercontent.com/Undebolted/FTAP/main/Script.lua",true))()')
-    wait(12)
-    OrionLib:Destroy()
-    wait(9e9)
-end
+-- ▼▼▼ 削除: バージョン確認ブロック ▼▼▼
+-- local localVersion = "1-beta"
+-- if localVersion ~= version then
+--    ...
+-- end
+-- ▲▲▲ 削除完了 ▲▲▲
 
 local Window = OrionLib:MakeWindow({
-    Name = "野獣のおちんちんハブ" .. version,
+    Name = "野獣のおちんちんハブ", -- 修正: version変数を削除
     HidePremium = false,
     SaveConfig = true,
     ConfigFolder = "野獣のおちんちんハブ",
     IntroEnabled = true,
-    IntroText = "野獣のおちんちんハブ" ..version,
+    IntroText = "野獣のおちんちんハブ", -- 修正: version変数を削除
     IntroIcon = "https://ibb.co/NgBCXdB6",
     Icon = "https://ibb.co/NgBCXdB6"
 })
@@ -2713,6 +2705,7 @@ OrionLib:MakeNotification({
 OrionLib:Init()
 
 print("🎮 野獣のおちんちんハブ - スクリプト読み込み完了!")
-print("📌 バージョン: " .. version)
+-- ▼▼▼ 削除: バージョン表示 ▼▼▼
+-- print("📌 バージョン: " .. version)
+-- ▲▲▲ 削除完了 ▲▲▲
 print("✅ すべての機能が正常に初期化されました")
-
