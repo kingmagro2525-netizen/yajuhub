@@ -75,8 +75,6 @@ local autoDefendKickCoroutine -- DefenseTab移植で必要
 -- ▼▼▼ Blobmanタブ用 グローバル変数 ▼▼▼
 local selectedBlobmanTargetName = nil
 local blobmanPlayerDropdown -- ドロップダウンオブジェクトを保持するための変数
-local blobmanKickLoopCoroutine = nil -- 追加: 個別キックループ用コルーチン
-local blobmanKickLoopTargetPlayer = nil -- 追加: 個別キックループの対象プレイヤー
 -- ▲▲▲ 追加・修正完了 ▲▲▲
 
 local AutoSitEnabled = false
@@ -87,9 +85,6 @@ _G.strength = 400
 _G.ToyToLoad = "BombMissile"
 _G.MaxMissiles = 9
 _G.BlobmanDelay = 0.05
--- 追加: 高速射出キックの設定
-_G.KickVelocityMagnitude = 1000000 -- 100万ブロック分飛ばすための速度
-_G.KickLoopDelay = 0.5 -- ループ間の待機時間
 
 local decoyOffset = 15
 local stopDistance = 5
@@ -182,13 +177,13 @@ end
 local poisonHurtParts = getDescendantParts("PoisonHurtPart")
 local paintPlayerParts = getDescendantParts("PaintPlayerPart")
 
--- ▼▼▼ Blobmanタブ用のプレイヤーリスト更新関数 (修正: 表示名(ユーザーID)形式) ▼▼▼
+-- ▼▼▼ Blobmanタブ用のプレイヤーリスト更新関数 ▼▼▼
 -- プレイヤー名を「表示名(ユーザーID)」形式で取得
 local function getPlayerNamesForDropdown()
     local names = {}
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= localPlayer then
-            -- 形式を「表示名(ユーザーID)」に修正 (RobloxのPlayer.Nameは表示名ではなく、変更にRobuxが必要なユーザー名の方だが、ここでは「表示名」として扱う)
+            -- 形式を「表示名(ユーザーID)」に修正
             table.insert(names, player.Name .. " (" .. player.UserId .. ")")
         end
     end
@@ -234,21 +229,14 @@ Players.PlayerAdded:Connect(function(player)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
-    -- ループキック対象が退出した場合、コルーチンを停止
-    if blobmanKickLoopCoroutine and blobmanKickLoopTargetPlayer and blobmanKickLoopTargetPlayer == player then
-        coroutine.close(blobmanKickLoopCoroutine)
-        blobmanKickLoopCoroutine = nil
-        blobmanKickLoopTargetPlayer = nil
-        OrionLib:MakeNotification({
-            Name = "Kick Loop Stop",
-            Content = player.Name .. " が退出しました。個別キックループを停止します。", 
-            Image = "rbxassetid://4483345998", 
-            Time = 5
-        })
-        -- トグルがあればオフにする処理をここに追加 (ただしコード内にトグルがないため保留)
-    end
     updateBlobmanDropdown()
 end)
+
+-- 既存の onPlayerAdded/onPlayerRemoving は使用しないため削除
+-- local function onPlayerAdded(player) ... end
+-- local function onPlayerRemoving(player) ... end
+-- Players.PlayerAdded:Connect(onPlayerAdded)
+-- Players.PlayerRemoving:Connect(onPlayerRemoving)
 -- ▲▲▲ Blobmanタブ用のプレイヤーリスト修正・自動更新処理完了 ▲▲▲
 
 
@@ -898,15 +886,12 @@ local function blobGrabPlayerTP(targetPlayer, blobman)
     
     -- プレイヤーが掴まれていないかチェック
     if targetPlayerObject.IsHeld and targetPlayerObject.IsHeld.Value == true then
-        -- ループキックの場合は掴まれていても続行の可能性があるため、ここでは通知のみ
-        if not blobmanKickLoopCoroutine then
-            OrionLib:MakeNotification({
-                Name = "Info",
-                Content = targetPlayerName .. " は既に掴まれています。", 
-                Image = "rbxassetid://4483345998", 
-                Time = 3
-            })
-        end
+        OrionLib:MakeNotification({
+            Name = "Info",
+            Content = targetPlayerName .. " は既に掴まれています。", 
+            Image = "rbxassetid://4483345998", 
+            Time = 3
+        })
         return
     end
 
@@ -920,156 +905,46 @@ local function blobGrabPlayerTP(targetPlayer, blobman)
     task.wait(_G.BlobmanDelay / 2)
     
     -- グロブマンの掴みロジックを修正
-    local targetDetector
-    local targetWeld
     if blobalter == 1 then
-        targetDetector = blobman:FindFirstChild("LeftDetector")
-        targetWeld = targetDetector and targetDetector:FindFirstChild("LeftWeld")
-        blobalter = 2
-    else
-        targetDetector = blobman:FindFirstChild("RightDetector")
-        targetWeld = targetDetector and targetDetector:FindFirstChild("RightWeld")
-        blobalter = 1
-    end
-
-    if targetDetector and targetWeld then
-        targetHRP.CFrame = targetDetector.CFrame * CFrame.new(0, 0, -3)
-        task.wait(0.05)
-        local args = {
-            [1] = targetDetector,
-            [2] = targetHRP,
-            [3] = targetWeld
-        }
-        local script = blobman:WaitForChild("BlobmanSeatAndOwnerScript", 0.5)
-        if script then
-            local creatureGrab = script:WaitForChild("CreatureGrab", 0.5)
-            if creatureGrab then
-                creatureGrab:FireServer(unpack(args))
-            end
-        end
-    end
-end
-
--- ▼▼▼ 追加: 個別プレイヤー高速射出キックのループ関数 ▼▼▼
-local function blobmanKickLoop(targetPlayer, blobman)
-    if not targetPlayer or not targetPlayer.Character or not targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        warn("ターゲットプレイヤーが見つかりません。")
-        return
-    end
-
-    local characterAddedConnection = nil
-
-    local function waitForPlayerRespawn()
-        if characterAddedConnection then characterAddedConnection:Disconnect() end
-        local playerRespawned = Instance.new("BindableEvent")
-        characterAddedConnection = targetPlayer.CharacterAdded:Connect(function()
-            playerRespawned:Fire()
-        end)
-        playerRespawned.Event:Wait()
-        if characterAddedConnection then characterAddedConnection:Disconnect() end
-        playerRespawned:Destroy()
-        task.wait(0.1) -- 新しいHRPがセットされるのを待つ
-        
-        -- 新しいCharacterを待つ
-        while not targetPlayer.Character or not targetPlayer.Character:FindFirstChild("HumanoidRootPart") do
+        local leftDetector = blobman:FindFirstChild("LeftDetector")
+        if leftDetector then
+            targetHRP.CFrame = leftDetector.CFrame * CFrame.new(0, 0, -3)
             task.wait(0.05)
-        end
-        return targetPlayer.Character
-    end
-
-    local function getTargetHRP(char)
-        return char:FindFirstChild("HumanoidRootPart")
-    end
-
-    local function kickTarget(char, blobmanModel)
-        local hrp = getTargetHRP(char)
-        if not hrp then return end
-        local blobmanHRP = blobmanModel.PrimaryPart or blobmanModel:FindFirstChild("Head") or blobmanModel:FindFirstChild("Body")
-
-        -- 1. テレポート
-        local targetPos = hrp.CFrame
-        if localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            localPlayer.Character.HumanoidRootPart.CFrame = targetPos * CFrame.new(0, 5, 0)
-        end
-        task.wait(0.05)
-        if blobmanHRP then
-            blobmanHRP.CFrame = targetPos * CFrame.new(0, 1, 0)
-        end
-        task.wait(0.05)
-
-        -- 2. いつも通り掴む
-        blobGrabPlayerTP(targetPlayer, blobmanModel)
-        
-        task.wait(0.1) -- 掴み動作完了を待つ
-
-        -- 3. ブロブマンのメインパートを使い、強力な勢いで飛ばす
-        if blobmanHRP then
-            -- ネットワークオーナーシップを取得
-            SetNetworkOwner:FireServer(blobmanHRP, blobmanHRP.CFrame)
-            task.wait(0.05)
-
-            local bodyVelocity = Instance.new("BodyVelocity")
-            bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-            
-            -- 飛ばす方向を設定 (空: Vector3.y, 下: Vector3.yをマイナス、横: Vector3.x, z)
-            -- 例: 空中への超高速射出
-            bodyVelocity.Velocity = Vector3.new(0, _G.KickVelocityMagnitude, 0) 
-            
-            bodyVelocity.Parent = blobmanHRP
-            Debris:AddItem(bodyVelocity, 0.5) -- 速度適用後すぐに破棄されるように設定
-
-            task.wait(0.5) -- 射出に時間を与える
-            
-            -- 掴みを解除 (これでプレイヤーは射出されたブロブマンと一緒に飛んでいく)
-            local grabParts = workspace:FindFirstChild("GrabParts")
-            if grabParts then
-                 for _, weld in pairs(grabParts:GetDescendants()) do
-                    if weld:IsA("WeldConstraint") then
-                        weld:Destroy()
-                    end
+            local args = {
+                [1] = leftDetector,
+                [2] = targetHRP,
+                [3] = leftDetector:FindFirstChild("LeftWeld")
+            }
+            local script = blobman:WaitForChild("BlobmanSeatAndOwnerScript", 0.5)
+            if script then
+                local creatureGrab = script:WaitForChild("CreatureGrab", 0.5)
+                if creatureGrab then
+                    creatureGrab:FireServer(unpack(args))
+                    blobalter = 2
                 end
-                grabParts:Destroy()
             end
-            
-            -- ブロブマンのBodyVelocityを停止 (プレイヤーは飛んでいる状態)
-            if bodyVelocity and bodyVelocity.Parent then bodyVelocity:Destroy() end
-
-            -- プレイヤーのHRPにBodyVelocityを付与して加速を補助（オプション）
-            if hrp and hrp.Parent then
-                local playerBV = Instance.new("BodyVelocity")
-                playerBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                playerBV.Velocity = Vector3.new(0, _G.KickVelocityMagnitude, 0) * 0.5 -- 補助的な速度
-                playerBV.Parent = hrp
-                Debris:AddItem(playerBV, 0.5)
+        end
+    else
+        local rightDetector = blobman:FindFirstChild("RightDetector")
+        if rightDetector then
+            targetHRP.CFrame = rightDetector.CFrame * CFrame.new(0, 0, -3)
+            task.wait(0.05)
+            local args = {
+                [1] = rightDetector,
+                [2] = targetHRP,
+                [3] = rightDetector:FindFirstChild("RightWeld")
+            }
+            local script = blobman:WaitForChild("BlobmanSeatAndOwnerScript", 0.5)
+            if script then
+                local creatureGrab = script:WaitForChild("CreatureGrab", 0.5)
+                if creatureGrab then
+                    creatureGrab:FireServer(unpack(args))
+                    blobalter = 1
+                end
             end
-            
-        else
-            warn("ブロブマンのメインパートが見つかりません。")
         end
-        
-        -- 4. ターゲットプレイヤーがリスポーンするまで待つ
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            repeat
-                task.wait(0.1)
-            until humanoid.Health <= 0
-        end
-
-        -- 5. リスポーン待ち
-        char = waitForPlayerRespawn()
-        
-        task.wait(_G.KickLoopDelay)
-        
-        -- 6. ループ
-        kickTarget(char, blobmanModel)
-
     end
-    
-    -- 初回実行
-    kickTarget(targetPlayer.Character, blobman)
 end
--- ▲▲▲ 追加: 個別プレイヤー高速射出キックのループ関数 ▲▲▲
-
 
 local function loopTPFunction(blobman)
     while true do
@@ -1097,7 +972,7 @@ end
 
 -- ▼▼▼ 削除: バージョン取得とチェック ▼▼▼
 -- local version = getVersion() 
--- ▲▲▲ 削除完了 ▼▲▲
+-- ▲▲▲ 削除完了 ▼▼▼
 
 local whitelistIdsStr = game:HttpGet("https://raw.githubusercontent.com/Undebolted/FTAP/main/WhitelistedUserId.txt")
 local whitelistIdsTbl = HttpService:JSONDecode(whitelistIdsStr)
@@ -1653,133 +1528,82 @@ blobmanPlayerDropdown = BlobmanTab:AddDropdown({ -- グローバル変数に代�
 selectedBlobmanTargetName = playerNames[1]
 
 -- 選択キックボタン
-local kickLoopToggle
-local function getTargetPlayerFromDropdown()
-    if not selectedBlobmanTargetName or selectedBlobmanTargetName == "（自分以外いません）" then
-        return nil
-    end
-    
-    -- 表示形式「名前 (UserID)」からUserIDを抽出
-    local userIdStr = selectedBlobmanTargetName:match("%((%d+)%)$")
-    
-    if userIdStr then
-        local userId = tonumber(userIdStr)
-        for _, player in pairs(Players:GetPlayers()) do
-            if player.UserId == userId then
-                return player
+BlobmanTab:AddButton({
+    Name = "選択プレイヤーをキック (TP Grab)",
+    Callback = function()
+        -- 1. ブロブマンに乗っているか確認
+        local foundBlobman = false
+        local currentBlobman = nil
+        for i, v in pairs(game.Workspace:GetDescendants()) do
+            if v:IsA("Model") and v.Name == "CreatureBlobman" then
+                if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
+                    currentBlobman = v
+                    foundBlobman = true
+                    break
+                end
             end
         end
-    end
-    
-    -- 念のため、UserIDで検索できなかった場合のフォールバック（RobloxのPlayer.Nameはユーザー名の方なので）
-    local playerName = selectedBlobmanTargetName:match("^(.*)%s%(") or selectedBlobmanTargetName
-    return Players:FindFirstChild(playerName)
-end
 
--- ▼▼▼ 追加: 個別プレイヤー高速射出キックのトグル ▼▼▼
-kickLoopToggle = BlobmanTab:AddToggle({
-    Name = "選択プレイヤーを高速射出ループキック (New)", -- 名前を分かりやすく変更
-    Default = false,
-    Color = Color3.fromRGB(240, 0, 0),
-    Save = false, -- 保存しない
-    Callback = function(enabled)
-        if enabled then
-            -- 1. ブロブマンに乗っているか確認
-            local foundBlobman = nil
-            for i, v in pairs(game.Workspace:GetDescendants()) do
-                if v:IsA("Model") and v.Name == "CreatureBlobman" then
-                    if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
-                        foundBlobman = v
-                        break
-                    end
-                end
-            end
-
-            if not foundBlobman then
-                OrionLib:MakeNotification({
-                    Name = "Error",
-                    Content = "ブロブマンに乗ってからトグルをオンにしてください", 
-                    Image = "rbxassetid://4483345998", 
-                    Time = 5
-                })
-                kickLoopToggle:Set(false)
-                return
-            end
-
-            -- 2. 対象プレイヤーを取得
-            local targetPlayer = getTargetPlayerFromDropdown()
-
-            if not targetPlayer or targetPlayer == localPlayer or not targetPlayer.Character then
-                OrionLib:MakeNotification({
-                    Name = "Error",
-                    Content = "対象プレイヤーが見つからないか、無効です: " .. tostring(selectedBlobmanTargetName), 
-                    Image = "rbxassetid://4483345998", 
-                    Time = 5
-                })
-                kickLoopToggle:Set(false)
-                return
-            end
-            
-            -- 3. 実行
-            blobmanKickLoopTargetPlayer = targetPlayer
-            blobmanKickLoopCoroutine = coroutine.create(function()
-                pcall(blobmanKickLoop, targetPlayer, foundBlobman)
-                -- コルーチンが終了したらトグルをオフにする
-                if kickLoopToggle and kickLoopToggle:Get() then
-                     kickLoopToggle:Set(false)
-                end
-            end)
-            coroutine.resume(blobmanKickLoopCoroutine)
-            
-        else
-            -- 停止処理
-            if blobmanKickLoopCoroutine then
-                coroutine.close(blobmanKickLoopCoroutine)
-                blobmanKickLoopCoroutine = nil
-            end
-            blobmanKickLoopTargetPlayer = nil
+        if not foundBlobman then
             OrionLib:MakeNotification({
-                Name = "Stop",
-                Content = "高速射出ループキックを停止しました", 
+                Name = "Error",
+                Content = "ブロブマンに乗ってからボタンを押してください", 
                 Image = "rbxassetid://4483345998", 
-                Time = 3
+                Time = 5
             })
+            return
         end
+
+        -- 2. 対象プレイヤーを取得
+        if not selectedBlobmanTargetName or selectedBlobmanTargetName == "（自分以外いません）" then
+            OrionLib:MakeNotification({
+                Name = "Error",
+                Content = "対象プレイヤーが選択されていません", 
+                Image = "rbxassetid://4483345998", 
+                Time = 5
+            })
+            return
+        end
+        
+        -- ドロップダウンの表示形式「名前 (UserID)」からPlayerオブジェクトを取得
+        local playerNameWithId = selectedBlobmanTargetName
+        local startIndex = playerNameWithId:find("%s(%d+)%")
+        local userIdStr = startIndex and playerNameWithId:sub(startIndex + 1, -2)
+        local targetPlayer = nil
+        
+        if userIdStr then
+            local userId = tonumber(userIdStr)
+            for _, player in pairs(Players:GetPlayers()) do
+                if player.UserId == userId then
+                    targetPlayer = player
+                    break
+                end
+            end
+        end
+        
+        -- ユーザーIDが取得できない、またはプレイヤーが見つからない場合のフォールバック（表示名のみ）
+        if not targetPlayer then
+            local playerName = playerNameWithId:match("^(.*)%s%(") or playerNameWithId
+            targetPlayer = Players:FindFirstChild(playerName)
+        end
+
+
+        if not targetPlayer or targetPlayer == localPlayer or not targetPlayer.Character then
+            OrionLib:MakeNotification({
+                Name = "Error",
+                Content = "対象プレイヤーが見つからないか、無効です: " .. tostring(selectedBlobmanTargetName), 
+                Image = "rbxassetid://4483345998", 
+                Time = 5
+            })
+            return
+        end
+
+        -- 3. 実行
+        pcall(function()
+            blobGrabPlayerTP(targetPlayer, currentBlobman)
+        end)
     end
 })
-
--- 選択キック速度スライダー
-BlobmanTab:AddSlider({
-    Name = "射出速度の大きさ",
-    Min = 1000,
-    Max = 10000000,
-    Color = Color3.fromRGB(240, 0, 0),
-    ValueName = "Velocity",
-    Increment = 1000,
-    Default = _G.KickVelocityMagnitude,
-    Save = true,
-    Flag = "KickVelocityMagnitudeSlider",
-    Callback = function(value)
-        _G.KickVelocityMagnitude = value
-    end
-})
-
--- 選択キックループディレイスライダー
-BlobmanTab:AddSlider({
-    Name = "キックループ待機時間",
-    Min = 0.1,
-    Max = 5,
-    Color = Color3.fromRGB(240, 0, 0),
-    ValueName = "sec",
-    Increment = 0.1,
-    Default = _G.KickLoopDelay,
-    Save = true,
-    Flag = "KickLoopDelaySlider",
-    Callback = function(value)
-        _G.KickLoopDelay = value
-    end
-})
-
 
 BlobmanTab:AddParagraph("注意: プレイヤーの入退室があった場合、リストは自動で更新されます。")
 
@@ -2168,7 +1992,7 @@ AuraTab:AddToggle({
                         end
                         wait(0.02)
                     end
-                })
+                end)
                 coroutine.resume(kickCoroutine)
             elseif kickCoroutine then
                 coroutine.close(kickCoroutine)
@@ -3059,9 +2883,7 @@ game:GetService("Players").PlayerRemoving:Connect(function(player)
     if player == localPlayer then
         if loopTpCoroutine then coroutine.close(loopTpCoroutine) end
         if blobmanCoroutine then coroutine.close(blobmanCoroutine) end -- 移植された可能性のあるコルーチンを閉じる
-        if blobmanKickLoopCoroutine then coroutine.close(blobmanKickLoopCoroutine) end -- 追加: 新規コルーチンを閉じる
     end
-    -- PlayerRemoving の自動更新処理は冒頭のPlayers.PlayerRemoving:Connectで対応済み
 end)
 
 OrionLib:MakeNotification({
