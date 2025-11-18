@@ -26,7 +26,7 @@ local connectionBombReload
 local reloadBombCoroutine
 local antiExplosionConnection
 local poisonAuraCoroutine
-local strengthConnection
+local strengthConnection -- 変更：この行はそのまま残します
 local autoStruggleCoroutine
 local autoDefendCoroutine
 local auraCoroutine
@@ -83,7 +83,8 @@ local AutoSitEnabled = false
 local loopTpCoroutine
 local currentLoopTpPlayerIndex = 1
 
-_G.strength = 400
+-- 変更：元の _G.strength は新しいコードでは使われないため削除（または他の機能で使われているなら残す。ここでは削除します）
+-- _G.strength = 400 
 _G.ToyToLoad = "BombMissile"
 _G.MaxMissiles = 9
 _G.BlobmanDelay = 0.05
@@ -1039,42 +1040,40 @@ local ExplosionTab = Window:MakeTab({Name = "爆弾", Icon = "rbxassetid://18624
 local KeybindsTab = Window:MakeTab({Name = "キービエンス", Icon = "rbxassetid://18624616682", PremiumOnly = false})
 local DevTab = Window:MakeTab({Name = "デベロッパーテスト", Icon = "rbxassetid://18624599762", PremiumOnly = false})
 
-GrabTab:AddSlider({
-    Name = "強さ",
-    Min = 300,
-    Max = 4000,
-    Color = Color3.fromRGB(240, 0, 0),
-    ValueName = ".",
-    Increment = 1,
-    Default = _G.strength,
-    Save = true,
-    Flag = "強さスライダー",
-    Callback = function(value)
-        _G.strength = value
-    end
-})
+-- ▼▼▼ 変更ここから ▼▼▼
+-- 元の「強さ」スライダーとトグルを削除し、新しいコードを挿入します。
+
+local ThrowPower = 400 -- 新しいコード用の変数を定義
 
 GrabTab:AddToggle({
-    Name = "強さ",
+    Name = "Stronger Throw", -- 新しい名前
     Default = false,
-    Color = Color3.fromRGB(240, 0, 0),
-    Save = true,
-    Flag = "強さトグル",
+    -- Color は指定されていないため省略 (OrionLibのデフォルト色になります)
+    -- Save は指定されていないため省略
+    -- Flag は指定されていないため省略
     Callback = function(enabled)
         if enabled then
-            strengthConnection = workspace.ChildAdded:Connect(function(model)
+            strengthConnection = workspace.ChildAdded:Connect(function(model) -- 元の strengthConnection を使用
                 if model.Name == "GrabParts" then
-                    local partToImpulse = model.GrabPart.WeldConstraint.Part1
+                    local grabPart = model:FindFirstChild("GrabPart")
+                    local weld = grabPart and grabPart:FindFirstChild("WeldConstraint")
+                    local partToImpulse = weld and weld.Part1
+
                     if partToImpulse then
-                        local velocityObj = Instance.new("BodyVelocity", partToImpulse)
+                        local velocityObj = Instance.new("BodyVelocity")
+                        velocityObj.Parent = partToImpulse
+                        velocityObj.MaxForce = Vector3.zero -- 投げる前は力を0に
+
                         model:GetPropertyChangedSignal("Parent"):Connect(function()
-                            if not model.Parent then
-                                if UserInputService:GetLastInputType() == Enum.UserInputType.MouseButton2 then
+                            if not model.Parent then -- 掴むのをやめた（投げた）時
+                                local lastInput = UserInputService:GetLastInputType()
+                                -- 右クリックまたはタッチ入力で投げる
+                                if lastInput == Enum.UserInputType.MouseButton2 or lastInput == Enum.UserInputType.Touch then
                                     velocityObj.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                                    velocityObj.Velocity = workspace.CurrentCamera.CFrame.LookVector * _G.strength
+                                    velocityObj.Velocity = workspace.CurrentCamera.CFrame.LookVector * ThrowPower -- ThrowPower を使用
                                     Debris:AddItem(velocityObj, 1)
                                 else
-                                    velocityObj:Destroy()
+                                    velocityObj:Destroy() -- 左クリックなどで離した場合は破棄
                                 end
                             end
                         end)
@@ -1083,9 +1082,27 @@ GrabTab:AddToggle({
             end)
         elseif strengthConnection then
             strengthConnection:Disconnect()
+            strengthConnection = nil -- nil を代入してリセット
         end
     end
 })
+
+GrabTab:AddSlider({
+    Name = "Throw Power", -- 新しい名前
+    Min = 300,
+    Max = 4000,
+    -- Color は指定されていないため省略
+    ValueName = "Power", -- 新しいValueName
+    Increment = 1,
+    Default = 400, -- デフォルト値を 400 に設定
+    -- Save は指定されていないため省略
+    -- Flag は指定されていないため省略
+    Callback = function(value)
+        ThrowPower = value -- ThrowPower 変数を更新
+    end
+})
+
+-- ▲▲▲ 変更ここまで ▲▲▲
 
 GrabTab:AddParagraph("Grab stuff", "These effects apply when you grab someone")
 
