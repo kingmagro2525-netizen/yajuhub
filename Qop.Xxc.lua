@@ -75,6 +75,8 @@ local autoDefendKickCoroutine -- DefenseTab移植で必要
 -- ▼▼▼ Blobmanタブ用 グローバル変数 ▼▼▼
 local selectedBlobmanTargetName = nil
 local blobmanPlayerDropdown -- ドロップダウンオブジェクトを保持するための変数
+local loopKickCoroutine = nil -- ループキック用コルーチン
+local selectedLoopKickTargetPlayer = nil -- ループキック対象プレイヤー
 -- ▲▲▲ 追加・修正完了 ▲▲▲
 
 local AutoSitEnabled = false
@@ -230,6 +232,18 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
     updateBlobmanDropdown()
+    
+    -- ループキック対象が退出したらループを止める
+    if selectedLoopKickTargetPlayer and player == selectedLoopKickTargetPlayer then
+        if loopKickCoroutine then
+            coroutine.close(loopKickCoroutine)
+            loopKickCoroutine = nil
+        end
+        selectedLoopKickTargetPlayer = nil
+        OrionLib:MakeNotification({Name = "停止", Content = "ターゲットが退出したため、ループキックを停止しました。", Image = "rbxassetid://4483345998", Time = 3})
+        -- トグルをUI上でOFFにする (OrionLibにその機能があれば)
+        -- 見当たらないため、次回オンにしたときに再チェックされる
+    end
 end)
 
 -- 既存の onPlayerAdded/onPlayerRemoving は使用しないため削除
@@ -886,12 +900,13 @@ local function blobGrabPlayerTP(targetPlayer, blobman)
     
     -- プレイヤーが掴まれていないかチェック
     if targetPlayerObject.IsHeld and targetPlayerObject.IsHeld.Value == true then
-        OrionLib:MakeNotification({
-            Name = "Info",
-            Content = targetPlayerName .. " は既に掴まれています。", 
-            Image = "rbxassetid://4483345998", 
-            Time = 3
-        })
+        -- OrionLib:MakeNotification({
+        --     Name = "Info",
+        --     Content = targetPlayerName .. " は既に掴まれています。", 
+        --     Image = "rbxassetid://4483345998", 
+        --     Time = 3
+        -- })
+        -- ループキック中は通知が邪魔なのでコメントアウト
         return
     end
 
@@ -1565,27 +1580,30 @@ BlobmanTab:AddButton({
             return
         end
         
-        -- ドロップダウンの表示形式「名前 (UserID)」からPlayerオブジェクトを取得
+        -- ▼▼▼ 修正: 「表示名 (UserID)」形式からPlayerオブジェクトを取得 ▼▼▼
         local playerNameWithId = selectedBlobmanTargetName
-        local startIndex = playerNameWithId:find("%s(%d+)%")
-        local userIdStr = startIndex and playerNameWithId:sub(startIndex + 1, -2)
         local targetPlayer = nil
         
+        -- まずUserIDで検索を試みる
+        local userIdStr = playerNameWithId:match("%((%d+)%)")
         if userIdStr then
             local userId = tonumber(userIdStr)
-            for _, player in pairs(Players:GetPlayers()) do
-                if player.UserId == userId then
-                    targetPlayer = player
-                    break
-                end
+            if userId then
+                targetPlayer = Players:GetPlayerByUserId(userId)
             end
         end
         
-        -- ユーザーIDが取得できない、またはプレイヤーが見つからない場合のフォールバック（表示名のみ）
+        -- UserIDで見つからなかった場合、表示名でフォールバック (括弧の前の部分)
         if not targetPlayer then
-            local playerName = playerNameWithId:match("^(.*)%s%(") or playerNameWithId
-            targetPlayer = Players:FindFirstChild(playerName)
+            local playerName = playerNameWithId:match("^(.*)%s%(")
+            if playerName then
+                targetPlayer = Players:FindFirstChild(playerName)
+            else
+                -- 括弧がない場合 (「（自分以外いません）」など)
+                targetPlayer = Players:FindFirstChild(playerNameWithId)
+            end
         end
+        -- ▲▲▲ 修正完了 ▲▲▲
 
 
         if not targetPlayer or targetPlayer == localPlayer or not targetPlayer.Character then
@@ -1670,6 +1688,145 @@ BlobmanTab:AddSlider({
         _G.BlobmanDelay = value
     end
 })
+
+-- ▼▼▼ 新機能: 選択プレイヤーループキック ▼▼▼
+local loopKickToggle
+loopKickToggle = BlobmanTab:AddToggle({
+    Name = "選択プレイヤーをループキック",
+    Default = false,
+    Color = Color3.fromRGB(240, 0, 0),
+    Save = false, -- セーブはしない方が安全
+    Callback = function(enabled)
+        if enabled then
+            -- 1. ブロブマンに乗っているか確認
+            local currentBlobman = nil
+            for i, v in pairs(game.Workspace:GetDescendants()) do
+                if v:IsA("Model") and v.Name == "CreatureBlobman" then
+                    if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
+                        currentBlobman = v
+                        break
+                    end
+                end
+            end
+
+            if not currentBlobman then
+                OrionLib:MakeNotification({Name = "Error", Content = "ブロブマンに乗ってからオンにしてください", Image = "rbxassetid://4483345998", Time = 5})
+                if loopKickToggle then loopKickToggle:Set(false) end
+                return
+            end
+
+            -- 2. 対象プレイヤーを取得 (キックボタンと同じロジック)
+            if not selectedBlobmanTargetName or selectedBlobmanTargetName == "（自分以外いません）" then
+                OrionLib:MakeNotification({Name = "Error", Content = "対象プレイヤーが選択されていません", Image = "rbxassetid://4483345998", Time = 5})
+                if loopKickToggle then loopKickToggle:Set(false) end
+                return
+            end
+            
+            local playerNameWithId = selectedBlobmanTargetName
+            local targetPlayer = nil
+            local userIdStr = playerNameWithId:match("%((%d+)%)")
+            if userIdStr then
+                local userId = tonumber(userIdStr)
+                if userId then targetPlayer = Players:GetPlayerByUserId(userId) end
+            end
+            if not targetPlayer then
+                local playerName = playerNameWithId:match("^(.*)%s%(")
+                if playerName then targetPlayer = Players:FindFirstChild(playerName)
+                else targetPlayer = Players:FindFirstChild(playerNameWithId) end
+            end
+
+            if not targetPlayer or targetPlayer == localPlayer then
+                OrionLib:MakeNotification({Name = "Error", Content = "対象プレイヤーが無効です", Image = "rbxassetid://4483345998", Time = 5})
+                if loopKickToggle then loopKickToggle:Set(false) end
+                return
+            end
+            
+            selectedLoopKickTargetPlayer = targetPlayer -- ターゲットをグローバル変数に保存
+            OrionLib:MakeNotification({Name = "開始", Content = selectedLoopKickTargetPlayer.Name .. " のループキックを開始します。", Image = "rbxassetid://4483345998", Time = 3})
+
+            -- 3. ループコルーチンを開始
+            loopKickCoroutine = coroutine.create(function()
+                local target = selectedLoopKickTargetPlayer
+                if not target then return end -- 万が一のため
+                
+                while true do 
+                    -- a. ターゲットのキャラクターとHRPを待つ (リスポーン待機)
+                    local targetCharacter = target.Character
+                    if not targetCharacter or not targetCharacter:FindFirstChild("HumanoidRootPart") or targetCharacter:FindFirstChildOfClass("Humanoid").Health <= 0 then
+                        OrionLib:MakeNotification({Name = "待機中", Content = target.Name .. " のリスポーンを待っています...", Image = "rbxassetid://4483345998", Time = 2})
+                        target.CharacterAdded:Wait()
+                        targetCharacter = target.Character
+                        task.wait(1) -- キャラクターが完全にロードされるのを待つ
+                    end
+                    
+                    if not targetCharacter then task.wait(0.5); continue end -- 稀なエラー防止
+                    
+                    local targetHrp = targetCharacter:WaitForChild("HumanoidRootPart")
+                    local targetHumanoid = targetCharacter:WaitForChildOfClass("Humanoid")
+                    
+                    -- b. ブロブマンに乗っているか再確認 (降りていたら停止)
+                    local blobman = nil
+                    for i, v in pairs(game.Workspace:GetDescendants()) do
+                        if v:IsA("Model") and v.Name == "CreatureBlobman" then
+                            if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
+                                blobman = v
+                                break
+                            end
+                        end
+                    end
+                    
+                    if not blobman then
+                        OrionLib:MakeNotification({Name = "停止", Content = "ブロブマンから降りました。ループを停止します。", Image = "rbxassetid://4483345998", Time = 5})
+                        if loopKickToggle then loopKickToggle:Set(false) end -- トグルを自動でOFFにする
+                        coroutine.yield() -- コルーチンを終了
+                    end
+
+                    -- c. TP & Grab
+                    if targetHrp and targetHumanoid.Health > 0 then
+                        OrionLib:MakeNotification({Name = "実行", Content = target.Name .. " にTPして掴みます。", Image = "rbxassetid://4483345998", Time = 2})
+                        pcall(function()
+                            blobGrabPlayerTP(target, blobman)
+                        end)
+                    end
+                    
+                    -- d. 死亡待機
+                    OrionLib:MakeNotification({Name = "待機中", Content = target.Name .. " が飛ばされるか死亡するのを待っています...", Image = "rbxassetid://4483345998", Time = 3})
+                    
+                    -- プレイヤーが掴まれている間、または死ぬまで待つ
+                    while target.IsHeld and target.IsHeld.Value == true and targetHumanoid.Health > 0 do
+                        task.wait(0.1)
+                    end
+                    
+                    -- Flingされた後、または死んだ後
+                    if targetHumanoid.Health > 0 then
+                        -- Flingされてまだ生きている場合、死ぬまで待つ
+                        targetHumanoid.Died:Wait()
+                    end
+                    
+                    task.wait(1) -- リスポーン処理のための猶予
+                end
+            end)
+            coroutine.resume(loopKickCoroutine)
+
+        else
+            -- トグルがOFFにされた時の処理
+            if loopKickCoroutine then
+                coroutine.close(loopKickCoroutine)
+                loopKickCoroutine = nil
+            end
+            if selectedLoopKickTargetPlayer then
+                OrionLib:MakeNotification({Name = "停止", Content = selectedLoopKickTargetPlayer.Name .. " のループキックを停止しました。", Image = "rbxassetid://4483345998", Time = 3})
+                selectedLoopKickTargetPlayer = nil
+            else
+                 OrionLib:MakeNotification({Name = "停止", Content = "ループキックを停止しました。", Image = "rbxassetid://4483345998", Time = 3})
+            end
+        end
+    end
+})
+
+BlobmanTab:AddParagraph("ループキックの注意:", "「選択プレイヤーをループキック」は、あなたがブロブマンに乗っている間、選択したプレイヤーを掴み続けます。掴んだ後、あなた自身で飛ばす（Fling）操作をしてください。ターゲットがリスポーンすると自動で再度掴みにいきます。")
+-- ▲▲▲ 新機能追加完了 ▲▲▲
+
 
 -- ▼▼▼ 古い版から移植 (FunTab) ▼▼▼
 FunTab:AddLabel("クローン操作")
@@ -2883,6 +3040,7 @@ game:GetService("Players").PlayerRemoving:Connect(function(player)
     if player == localPlayer then
         if loopTpCoroutine then coroutine.close(loopTpCoroutine) end
         if blobmanCoroutine then coroutine.close(blobmanCoroutine) end -- 移植された可能性のあるコルーチンを閉じる
+        if loopKickCoroutine then coroutine.close(loopKickCoroutine) end -- ループキックも閉じる
     end
 end)
 
