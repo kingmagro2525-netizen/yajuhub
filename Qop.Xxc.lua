@@ -102,7 +102,7 @@ local lightbitoffset = 1
 local lightbitradius = 20
 local usingradius = lightbitradius
 
-local OrionLib = loadstring(game:HttpGet(("https://raw.githubusercontent.com/yua20170313a-pixel/Orion/e19e8236bde46c459fb0d617e4640aeb75878703/source")))()
+local OrionLib = loadstring(game:HttpGet(("https://raw.githubusercontent.com/Polinorsik/Orion-Z-Library/refs/heads/main/README.md")))()
 
 local Utilities = {}
 local U = Utilities
