@@ -26,7 +26,7 @@ local connectionBombReload
 local reloadBombCoroutine
 local antiExplosionConnection
 local poisonAuraCoroutine
-local strengthConnection
+local strengthConnection -- 変更：この行はそのまま残します
 local autoStruggleCoroutine
 local autoDefendCoroutine
 local auraCoroutine
@@ -60,6 +60,7 @@ local alignOrientations = {}
 local characterAddedConn
 local anchorKickCoroutine
 
+-- ▼▼▼ 古い版から移植 (不足変数) ▼▼▼
 local deathAuraCoroutine
 local poisonCoroutines = {}
 local coroutineRunning = false
@@ -68,24 +69,22 @@ local hellSendGrabCoroutine
 local blobmanCoroutine
 local lighBitSpeedCoroutine
 local tpAllCoroutine
-local autoDefendKickCoroutine
+local autoDefendKickCoroutine -- DefenseTab移植で必要
+-- ▲▲▲ 移植完了 ▲▲▲
 
--- Blobmanタブ用グローバル変数
+-- ▼▼▼ Blobmanタブ用 グローバル変数 ▼▼▼
 local selectedBlobmanTargetName = nil
-local blobmanPlayerDropdown
-local loopKickCoroutine = nil
-local selectedLoopKickTargetPlayer = nil
-
--- ESP用グローバル変数
-local espEnabled = false
-local espConnections = {}
-local espGuiCache = {}
+local blobmanPlayerDropdown -- ドロップダウンオブジェクトを保持するための変数
+local loopKickCoroutine = nil -- ループキック用コルーチン
+local selectedLoopKickTargetPlayer = nil -- ループキック対象プレイヤー
+-- ▲▲▲ 追加・修正完了 ▲▲▲
 
 local AutoSitEnabled = false
 local loopTpCoroutine
 local currentLoopTpPlayerIndex = 1
 
-local ThrowPower = 400
+-- 変更：元の _G.strength は新しいコードでは使われないため削除（または他の機能で使われているなら残す。ここでは削除します）
+-- _G.strength = 400 
 _G.ToyToLoad = "BombMissile"
 _G.MaxMissiles = 9
 _G.BlobmanDelay = 0.05
@@ -103,7 +102,7 @@ local lightbitoffset = 1
 local lightbitradius = 20
 local usingradius = lightbitradius
 
-local OrionLib = loadstring(game:HttpGet(("https://raw.githubusercontent.com/yua20170313a-pixel/Orion/e19e8236bde46c459fb0d617e4640aeb75878703/source")))()
+local OrionLib = loadstring(game:HttpGet(("https://raw.githubusercontent.com/Polinorsik/Orion-Z-Library/refs/heads/main/README.md")))()
 
 local Utilities = {}
 local U = Utilities
@@ -181,12 +180,14 @@ end
 local poisonHurtParts = getDescendantParts("PoisonHurtPart")
 local paintPlayerParts = getDescendantParts("PaintPlayerPart")
 
--- プレイヤー名を「表示名 (UserID)」形式で取得
+-- ▼▼▼ Blobmanタブ用のプレイヤーリスト更新関数 ▼▼▼
+-- プレイヤー名を「表示名(ユーザーID)」形式で取得
 local function getPlayerNamesForDropdown()
     local names = {}
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= localPlayer then
-            table.insert(names, player.DisplayName .. " (" .. player.UserId .. ")")
+            -- 形式を「表示名(ユーザーID)」に修正
+            table.insert(names, player.Name .. " (" .. player.UserId .. ")")
         end
     end
     if #names == 0 then
@@ -199,9 +200,11 @@ end
 local function updateBlobmanDropdown()
     local newNames = getPlayerNamesForDropdown()
     
+    -- ドロップダウンが存在し、かつプレイヤーが1人以上いる場合
     if blobmanPlayerDropdown and #newNames > 0 and newNames[1] ~= "（自分以外いません）" then
         blobmanPlayerDropdown:SetOptions(newNames)
         
+        -- 現在の選択肢が新しいリストに存在しない場合は、最初の要素を選択する
         local isSelectedTargetStillExists = false
         for _, name in ipairs(newNames) do
             if name == selectedBlobmanTargetName then
@@ -215,20 +218,23 @@ local function updateBlobmanDropdown()
             blobmanPlayerDropdown:Set(newNames[1])
         end
     elseif blobmanPlayerDropdown then
+        -- プレイヤーがいない場合は「（自分以外いません）」のみにする
         blobmanPlayerDropdown:SetOptions(newNames)
         selectedBlobmanTargetName = newNames[1]
         blobmanPlayerDropdown:Set(newNames[1])
     end
 end
 
+-- PlayerAdded, PlayerRemovingイベントでリストを自動更新
 Players.PlayerAdded:Connect(function(player)
-    task.wait(0.5)
+    task.wait(0.5) -- プレイヤーのキャラクターが完全にロードされるのを待つ
     updateBlobmanDropdown()
 end)
 
 Players.PlayerRemoving:Connect(function(player)
     updateBlobmanDropdown()
     
+    -- ループキック対象が退出したらループを止める
     if selectedLoopKickTargetPlayer and player == selectedLoopKickTargetPlayer then
         if loopKickCoroutine then
             coroutine.close(loopKickCoroutine)
@@ -236,8 +242,18 @@ Players.PlayerRemoving:Connect(function(player)
         end
         selectedLoopKickTargetPlayer = nil
         OrionLib:MakeNotification({Name = "停止", Content = "ターゲットが退出したため、ループキックを停止しました。", Image = "rbxassetid://4483345998", Time = 3})
+        -- トグルをUI上でOFFにする (OrionLibにその機能があれば)
+        -- 見当たらないため、次回オンにしたときに再チェックされる
     end
 end)
+
+-- 既存の onPlayerAdded/onPlayerRemoving は使用しないため削除
+-- local function onPlayerAdded(player) ... end
+-- local function onPlayerRemoving(player) ... end
+-- Players.PlayerAdded:Connect(onPlayerAdded)
+-- Players.PlayerRemoving:Connect(onPlayerRemoving)
+-- ▲▲▲ Blobmanタブ用のプレイヤーリスト修正・自動更新処理完了 ▲▲▲
+
 
 for i, v in pairs(localPlayer:WaitForChild("PlayerGui"):WaitForChild("MenuGui"):WaitForChild("Menu"):WaitForChild("TabContents"):WaitForChild("Toys"):WaitForChild("Contents"):GetChildren()) do
     if v.Name ~= "UIGridLayout" then
@@ -267,6 +283,10 @@ local function cleanupConnections(connectionTable)
         end
     end
 end
+
+-- ▼▼▼ 削除: getVersion() 関数 ▼▼▼
+-- local function getVersion() ... end
+-- ▲▲▲ 削除完了 ▼▼▼
 
 local function spawnItem(itemName, position, orientation)
     task.spawn(function()
@@ -315,6 +335,7 @@ local function kickGrab()
     local playerAddedConnection = Players.PlayerAdded:Connect(handleCharacterAdded)
     table.insert(kickGrabConnections, playerAddedConnection)
 end
+
 local function grabHandler(grabType)
     while true do
         pcall(function()
@@ -408,7 +429,6 @@ local function spawnItemCf(itemName, cframe)
         ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer(itemName, cframe, rotation)
     end)
 end
-
 local function fireAll()
     while true do
         pcall(function()
@@ -756,6 +776,7 @@ local function ragdollAll()
         wait()
     end
 end
+
 local function reloadMissile(bool)
     if bool then
         if not ownedToys[_G.ToyToLoad] then
@@ -872,11 +893,21 @@ local function blobGrabPlayerTP(targetPlayer, blobman)
     local playerHRP = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not playerHRP then return end
     
-    local targetPlayerObject = targetPlayer
+    -- プレイヤー名からユーザーIDを抽出してPlayerオブジェクトを取得
+    local targetPlayerName = targetPlayer.Name 
+    local targetPlayerObject = Players:FindFirstChild(targetPlayerName)
     
     if not targetPlayerObject or not targetPlayerObject.Character then return end
     
+    -- プレイヤーが掴まれていないかチェック
     if targetPlayerObject.IsHeld and targetPlayerObject.IsHeld.Value == true then
+        -- OrionLib:MakeNotification({
+        --     Name = "Info",
+        --     Content = targetPlayerName .. " は既に掴まれています。", 
+        --     Image = "rbxassetid://4483345998", 
+        --     Time = 3
+        -- })
+        -- ループキック中は通知が邪魔なのでコメントアウト
         return
     end
 
@@ -889,6 +920,7 @@ local function blobGrabPlayerTP(targetPlayer, blobman)
     end
     task.wait(_G.BlobmanDelay / 2)
     
+    -- グロブマンの掴みロジックを修正
     if blobalter == 1 then
         local leftDetector = blobman:FindFirstChild("LeftDetector")
         if leftDetector then
@@ -954,134 +986,9 @@ local function loopTPFunction(blobman)
     end
 end
 
--- ESP機能の実装
-local function createESPForPlayer(player)
-    if player == localPlayer then return end
-    if espGuiCache[player] then return end
-    
-    local function setupESP(character)
-        if not character then return end
-        local hrp = character:WaitForChild("HumanoidRootPart", 5)
-        if not hrp then return end
-        
-        -- BillboardGUIを作成
-        local billboard = Instance.new("BillboardGui")
-        billboard.Name = "ESPGui"
-        billboard.Adornee = hrp
-        billboard.Size = UDim2.new(0, 100, 0, 50)
-        billboard.StudsOffset = Vector3.new(0, 3, 0)
-        billboard.AlwaysOnTop = true
-        billboard.Parent = hrp
-        
-        -- アイコン(丸)を作成
-        local icon = Instance.new("Frame")
-        icon.Name = "Icon"
-        icon.Size = UDim2.new(0, 20, 0, 20)
-        icon.Position = UDim2.new(0.5, -10, 0, 0)
-        icon.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-        icon.BorderSizePixel = 0
-        icon.Parent = billboard
-        
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(1, 0)
-        corner.Parent = icon
-        
-        -- 表示名のテキストラベルを作成
-        local nameLabel = Instance.new("TextLabel")
-        nameLabel.Name = "NameLabel"
-        nameLabel.Size = UDim2.new(1, 0, 0, 25)
-        nameLabel.Position = UDim2.new(0, 0, 0, 25)
-        nameLabel.BackgroundTransparency = 1
-        nameLabel.Text = player.DisplayName
-        nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        nameLabel.TextStrokeTransparency = 0.5
-        nameLabel.TextScaled = true
-        nameLabel.Font = Enum.Font.GothamBold
-        nameLabel.Parent = billboard
-        
-        espGuiCache[player] = billboard
-        
-        -- 重なり防止: 他のプレイヤーのESPと位置が近い場合、Y軸をずらす
-        local function adjustPosition()
-            if not billboard or not billboard.Parent then return end
-            local myPos = hrp.Position
-            local offset = 0
-            
-            for otherPlayer, otherGui in pairs(espGuiCache) do
-                if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                    local otherHrp = otherPlayer.Character.HumanoidRootPart
-                    local distance = (myPos - otherHrp.Position).Magnitude
-                    if distance < 5 then -- 5スタッド以内なら重なりとみなす
-                        offset = offset + 1
-                    end
-                end
-            end
-            
-            billboard.StudsOffset = Vector3.new(0, 3 + offset * 0.5, 0)
-        end
-        
-        -- 定期的に位置調整
-        local adjustConnection = RunService.Heartbeat:Connect(adjustPosition)
-        table.insert(espConnections, adjustConnection)
-        
-        -- キャラクターが削除されたらクリーンアップ
-        character.AncestryChanged:Connect(function()
-            if not character.Parent then
-                if billboard then billboard:Destroy() end
-                espGuiCache[player] = nil
-                if adjustConnection then adjustConnection:Disconnect() end
-            end
-        end)
-    end
-    
-    if player.Character then
-        setupESP(player.Character)
-    end
-    
-    local charAddedConn = player.CharacterAdded:Connect(function(character)
-        if espGuiCache[player] then
-            espGuiCache[player]:Destroy()
-            espGuiCache[player] = nil
-        end
-        if espEnabled then
-            setupESP(character)
-        end
-    end)
-    table.insert(espConnections, charAddedConn)
-end
-
-local function enableESP()
-    espEnabled = true
-    for _, player in pairs(Players:GetPlayers()) do
-        createESPForPlayer(player)
-    end
-    
-    local playerAddedConn = Players.PlayerAdded:Connect(function(player)
-        if espEnabled then
-            createESPForPlayer(player)
-        end
-    end)
-    table.insert(espConnections, playerAddedConn)
-    
-    local playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
-        if espGuiCache[player] then
-            espGuiCache[player]:Destroy()
-            espGuiCache[player] = nil
-        end
-    end)
-    table.insert(espConnections, playerRemovingConn)
-end
-
-local function disableESP()
-    espEnabled = false
-    cleanupConnections(espConnections)
-    espConnections = {}
-    
-    for player, gui in pairs(espGuiCache) do
-        if gui then gui:Destroy() end
-    end
-    espGuiCache = {}
-end
+-- ▼▼▼ 削除: バージョン取得とチェック ▼▼▼
+-- local version = getVersion() 
+-- ▲▲▲ 削除完了 ▼▼▼
 
 local whitelistIdsStr = game:HttpGet("https://raw.githubusercontent.com/Undebolted/FTAP/main/WhitelistedUserId.txt")
 local whitelistIdsTbl = HttpService:JSONDecode(whitelistIdsStr)
@@ -1101,13 +1008,20 @@ for _, v in pairs(whitelistIds) do
     end
 end
 
+-- ▼▼▼ 削除: バージョン確認ブロック ▼▼▼
+-- local localVersion = "1-beta"
+-- if localVersion ~= version then
+--    ...
+-- end
+-- ▲▲▲ 削除完了 ▼▼▼
+
 local Window = OrionLib:MakeWindow({
-    Name = "野獣のおちんちんハブ",
+    Name = "野獣のおちんちんハブ", -- 修正: version変数を削除
     HidePremium = false,
     SaveConfig = true,
     ConfigFolder = "野獣のおちんちんハブ",
     IntroEnabled = true,
-    IntroText = "野獣のおちんちんハブ",
+    IntroText = "野獣のおちんちんハブ", -- 修正: version変数を削除
     IntroIcon = "https://ibb.co/NgBCXdB6",
     Icon = "https://ibb.co/NgBCXdB6"
 })
@@ -1116,21 +1030,30 @@ local GrabTab = Window:MakeTab({Name = "グラブ", Icon = "rbxassetid://1862461
 local ObjectGrabTab = Window:MakeTab({Name = "オブジェクトグラブ", Icon = "rbxassetid://18624606749", PremiumOnly = false})
 local DefenseTab = Window:MakeTab({Name = "ディフェンス", Icon = "rbxassetid://18624604880", PremiumOnly = false})
 local BlobmanTab = Window:MakeTab({Name = "ブロブマン", Icon = "rbxassetid://18624614127", PremiumOnly = false})
-local ESPTab = Window:MakeTab({Name = "ESP", Icon = "rbxassetid://18624599762", PremiumOnly = false})
+-- ▼▼▼ 古い版から移植 (不足タブ) ▼▼▼
 local FunTab = Window:MakeTab({Name = "楽しい", Icon = "rbxassetid://18624603093", PremiumOnly = false})
 local ScriptTab = Window:MakeTab({Name = "他スクリプト", Icon = "rbxassetid://11570626783", PremiumOnly = false})
 local AuraTab = Window:MakeTab({Name = "オーラ", Icon = "rbxassetid://18624608005", PremiumOnly = false})
 local CharacterTab = Window:MakeTab({Name = "キャラクター", Icon = "rbxassetid://18624601543", PremiumOnly = false})
+-- ▲▲▲ 移植完了 ▲▲▲
 local ExplosionTab = Window:MakeTab({Name = "爆弾", Icon = "rbxassetid://18624610285", PremiumOnly = false})
 local KeybindsTab = Window:MakeTab({Name = "キービエンス", Icon = "rbxassetid://18624616682", PremiumOnly = false})
 local DevTab = Window:MakeTab({Name = "デベロッパーテスト", Icon = "rbxassetid://18624599762", PremiumOnly = false})
 
+-- ▼▼▼ 変更ここから ▼▼▼
+-- 元の「強さ」スライダーとトグルを削除し、新しいコードを挿入します。
+
+local ThrowPower = 400 -- 新しいコード用の変数を定義
+
 GrabTab:AddToggle({
-    Name = "Stronger Throw",
+    Name = "Stronger Throw", -- 新しい名前
     Default = false,
+    -- Color は指定されていないため省略 (OrionLibのデフォルト色になります)
+    -- Save は指定されていないため省略
+    -- Flag は指定されていないため省略
     Callback = function(enabled)
         if enabled then
-            strengthConnection = workspace.ChildAdded:Connect(function(model)
+            strengthConnection = workspace.ChildAdded:Connect(function(model) -- 元の strengthConnection を使用
                 if model.Name == "GrabParts" then
                     local grabPart = model:FindFirstChild("GrabPart")
                     local weld = grabPart and grabPart:FindFirstChild("WeldConstraint")
@@ -1139,17 +1062,18 @@ GrabTab:AddToggle({
                     if partToImpulse then
                         local velocityObj = Instance.new("BodyVelocity")
                         velocityObj.Parent = partToImpulse
-                        velocityObj.MaxForce = Vector3.zero
+                        velocityObj.MaxForce = Vector3.zero -- 投げる前は力を0に
 
                         model:GetPropertyChangedSignal("Parent"):Connect(function()
-                            if not model.Parent then
+                            if not model.Parent then -- 掴むのをやめた（投げた）時
                                 local lastInput = UserInputService:GetLastInputType()
+                                -- 右クリックまたはタッチ入力で投げる
                                 if lastInput == Enum.UserInputType.MouseButton2 or lastInput == Enum.UserInputType.Touch then
                                     velocityObj.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                                    velocityObj.Velocity = workspace.CurrentCamera.CFrame.LookVector * ThrowPower
+                                    velocityObj.Velocity = workspace.CurrentCamera.CFrame.LookVector * ThrowPower -- ThrowPower を使用
                                     Debris:AddItem(velocityObj, 1)
                                 else
-                                    velocityObj:Destroy()
+                                    velocityObj:Destroy() -- 左クリックなどで離した場合は破棄
                                 end
                             end
                         end)
@@ -1158,22 +1082,27 @@ GrabTab:AddToggle({
             end)
         elseif strengthConnection then
             strengthConnection:Disconnect()
-            strengthConnection = nil
+            strengthConnection = nil -- nil を代入してリセット
         end
     end
 })
 
 GrabTab:AddSlider({
-    Name = "Throw Power",
+    Name = "Throw Power", -- 新しい名前
     Min = 300,
     Max = 4000,
-    ValueName = "Power",
+    -- Color は指定されていないため省略
+    ValueName = "Power", -- 新しいValueName
     Increment = 1,
-    Default = 400,
+    Default = 400, -- デフォルト値を 400 に設定
+    -- Save は指定されていないため省略
+    -- Flag は指定されていないため省略
     Callback = function(value)
-        ThrowPower = value
+        ThrowPower = value -- ThrowPower 変数を更新
     end
 })
+
+-- ▲▲▲ 変更ここまで ▲▲▲
 
 GrabTab:AddParagraph("Grab stuff", "These effects apply when you grab someone")
 
@@ -1198,14 +1127,595 @@ GrabTab:AddToggle({
         end
     end
 })
+
+GrabTab:AddToggle({
+    Name = "Radioactive Grab",
+    Default = false,
+    Color = Color3.fromRGB(240, 0, 0),
+    Save = true,
+    Flag = "RadioactiveGrab",
+    Callback = function(enabled)
+        if enabled then
+            ufoGrabCoroutine = coroutine.create(function() grabHandler("radioactive") end)
+            coroutine.resume(ufoGrabCoroutine)
+        else
+            if ufoGrabCoroutine then
+                coroutine.close(ufoGrabCoroutine)
+                ufoGrabCoroutine = nil
+                for _, part in pairs(paintPlayerParts) do
+                    part.Position = Vector3.new(0, -200, 0)
+                end
+            end
+        end
+    end
+})
+
+GrabTab:AddToggle({
+    Name = "炎グラブ",
+    Default = false,
+    Color = Color3.fromRGB(240, 0, 0),
+    Save = true,
+    Flag = "炎グラブ",
+    Callback = function(enabled)
+        if enabled then
+            fireGrabCoroutine = coroutine.create(fireGrab)
+            coroutine.resume(fireGrabCoroutine)
+        else
+            if fireGrabCoroutine then
+                coroutine.close(fireGrabCoroutine)
+                fireGrabCoroutine = nil
+            end
+        end
+    end
+})
+
+GrabTab:AddToggle({
+    Name = "ノークリップグラブ",
+    Default = false,
+    Color = Color3.fromRGB(240, 0, 0),
+    Save = true,
+    Flag = "ノークリップグラブ",
+    Callback = function(enabled)
+        if enabled then
+            noclipGrabCoroutine = coroutine.create(noclipGrab)
+            coroutine.resume(noclipGrabCoroutine)
+        else
+            if noclipGrabCoroutine then
+                coroutine.close(noclipGrabCoroutine)
+                noclipGrabCoroutine = nil
+            end
+        end
+    end
+})
+
+GrabTab:AddToggle({
+    Name = "キックグラブ",
+    Color = Color3.fromRGB(240, 0, 0),
+    Default = false,
+    Save = true,
+    Flag = "キックグラブ",
+    Callback = function(enabled)
+        if enabled then
+            kickGrab()
+        else
+            for _, connection in pairs(kickGrabConnections) do
+                connection:Disconnect()
+            end
+            for _, player in pairs(Players:GetPlayers()) do
+                if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = player.Character.HumanoidRootPart
+                    if hrp:FindFirstChild("FirePlayerPart") then
+                        local fpp = hrp.FirePlayerPart
+                        fpp.Size = Vector3.new(2.5, 5.5, 2.5)
+                        fpp.CollisionGroup = "Default"
+                        fpp.CanQuery = false
+                    end
+                end
+            end
+            kickGrabConnections = {}
+        end
+    end
+})
+
+GrabTab:AddToggle({
+    Name = "キックグラブ固定 (使うにはキックグラブをオンにして)",
+    Default = false,
+    Save = true,
+    Color = Color3.fromRGB(240, 0, 0),
+    Flag = "AnchorKickGrab",
+    Callback = function(enabled)
+        if enabled then
+            if not anchorKickCoroutine or coroutine.status(anchorKickCoroutine) == "dead" then
+                anchorKickCoroutine = coroutine.create(anchorKickGrab)
+                coroutine.resume(anchorKickCoroutine)
+            end
+        else
+            if anchorKickCoroutine and coroutine.status(anchorKickCoroutine) ~= "dead" then
+                coroutine.close(anchorKickCoroutine)
+                anchorKickCoroutine = nil
+            end
+        end
+    end
+})
+
+GrabTab:AddParagraph("自分でスポーンさせたキャンプファイヤーがあったら消してください")
+
+GrabTab:AddToggle({
+    Name = "ファイヤーオール",
+    Default = false,
+    Color = Color3.fromRGB(240, 0, 0),
+    Save = true,
+    Callback = function(enabled)
+        if enabled then
+            fireAllCoroutine = coroutine.create(fireAll)
+            coroutine.resume(fireAllCoroutine)
+        else
+            if fireAllCoroutine then
+                coroutine.close(fireAllCoroutine)
+                fireAllCoroutine = nil
+            end
+        end
+    end
+})
+
+ObjectGrabTab:AddParagraph("オブジェクトだけです")
+
+ObjectGrabTab:AddToggle({
+    Name = "固めるグラブ",
+    Default = false,
+    Color = Color3.fromRGB(240, 0, 0),
+    Save = true,
+    Flag = "AnchorGrab",
+    Callback = function(enabled)
+        if enabled then
+            if not anchorGrabCoroutine or coroutine.status(anchorGrabCoroutine) == "dead" then
+                anchorGrabCoroutine = coroutine.create(anchorGrab)
+                coroutine.resume(anchorGrabCoroutine)
+            end
+        else
+            if anchorGrabCoroutine and coroutine.status(anchorGrabCoroutine) ~= "dead" then
+                coroutine.close(anchorGrabCoroutine)
+                anchorGrabCoroutine = nil
+            end
+        end
+    end
+})
+
+ObjectGrabTab:AddButton({
+    Name = "全て解除",
+    Callback = cleanupAnchoredParts
+})
+
+ObjectGrabTab:AddButton({
+    Name = "コンパイル",
+    Callback = function()
+        compileGroup()
+        if not compileCoroutine or coroutine.status(compileCoroutine) == "dead" then
+            compileCoroutine = coroutine.create(compileCoroutineFunc)
+            coroutine.resume(compileCoroutine)
+        end
+    end
+})
+
+ObjectGrabTab:AddButton({
+    Name = "Disassemble Parts",
+    Callback = function()
+        cleanupCompiledGroups()
+        cleanupAnchoredParts()
+        if compileCoroutine and coroutine.status(compileCoroutine) ~= "dead" then
+            coroutine.close(compileCoroutine)
+            compileCoroutine = nil
+        end
+    end
+})
+
+ObjectGrabTab:AddToggle({
+    Name = "落としたパーツを自動回復",
+    Color = Color3.fromRGB(240, 0, 0),
+    Default = false,
+    Save = true,
+    Flag = "AutoRecoverDroppedParts",
+    Callback = function(enabled)
+        if enabled then
+            if not AutoRecoverDroppedPartsCoroutine or coroutine.status(AutoRecoverDroppedPartsCoroutine) == "dead" then
+                AutoRecoverDroppedPartsCoroutine = coroutine.create(recoverParts)
+                coroutine.resume(AutoRecoverDroppedPartsCoroutine)
+            end
+        else
+            if AutoRecoverDroppedPartsCoroutine and coroutine.status(AutoRecoverDroppedPartsCoroutine) ~= "dead" then
+                coroutine.close(AutoRecoverDroppedPartsCoroutine)
+                AutoRecoverDroppedPartsCoroutine = nil
+            end
+        end
+    end
+})
+
+ObjectGrabTab:AddButton({
+    Name = "Unanchor Header Part",
+    Callback = unanchorPrimaryPart
+})
+
+DefenseTab:AddLabel("グラブディフェンス")
+
+DefenseTab:AddToggle({
+    Name = "アンチグラブ",
+    Color = Color3.fromRGB(240, 0, 0),
+    Default = false,
+    Save = true,
+    Flag = "AutoStruggle",
+    Callback = function(enabled)
+        if enabled then
+            autoStruggleCoroutine = RunService.Heartbeat:Connect(function()
+                local character = localPlayer.Character
+                if character and character:FindFirstChild("Head") then
+                    local head = character.Head
+                    local partOwner = head:FindFirstChild("PartOwner")
+                    if partOwner then
+                        Struggle:FireServer()
+                        ReplicatedStorage.GameCorrectionEvents.StopAllVelocity:FireServer()
+                        for _, part in pairs(character:GetChildren()) do
+                            if part:IsA("BasePart") then
+                                part.Anchored = true
+                            end
+                        end
+                        while localPlayer.IsHeld.Value do
+                            wait()
+                        end
+                        for _, part in pairs(character:GetChildren()) do
+                            if part:IsA("BasePart") then
+                                part.Anchored = false
+                            end
+                        end
+                    end
+                end
+            end)
+        else
+            if autoStruggleCoroutine then
+                autoStruggleCoroutine:Disconnect()
+                autoStruggleCoroutine = nil
+            end
+        end
+    end
+})
+
+DefenseTab:AddToggle({
+    Name = "アンチキックグラブ",
+    Default = false,
+    Color = Color3.fromRGB(240, 0, 0),
+    Save = true,
+    Flag = "AntiKickGrab",
+    Callback = function(enabled)
+        if enabled then
+            antiKickCoroutine = RunService.Heartbeat:Connect(function()
+                local character = localPlayer.Character
+                if character and character:FindFirstChild("HumanoidRootPart") and character:FindFirstChild("HumanoidRootPart"):FindFirstChild("FirePlayerPart") then
+                    local partOwner = character:FindFirstChild("HumanoidRootPart"):FindFirstChild("FirePlayerPart"):FindFirstChild("PartOwner")
+                    if partOwner and partOwner.Value ~= localPlayer.Name then
+                        local args = {[1] = character:WaitForChild("HumanoidRootPart"), [2] = 0}
+                        game:GetService("ReplicatedStorage"):WaitForChild("CharacterEvents"):WaitForChild("RagdollRemote"):FireServer(unpack(args))
+                        wait(0.1)
+                        Struggle:FireServer()
+                    end
+                end
+            end)
+        else
+            if antiKickCoroutine then
+                antiKickCoroutine:Disconnect()
+                antiKickCoroutine = nil
+            end
+        end
+    end
+})
+
+DefenseTab:AddToggle({
+    Name = "アンチ爆弾",
+    Default = false,
+    Color = Color3.fromRGB(240, 0, 0),
+    Save = true,
+    Flag = "AntiExplosion",
+    Callback = function(enabled)
+        if enabled then
+            if localPlayer.Character then
+                setupAntiExplosion(localPlayer.Character)
+            end
+            characterAddedConn = localPlayer.CharacterAdded:Connect(function(character)
+                if antiExplosionConnection then
+                    antiExplosionConnection:Disconnect()
+                end
+                setupAntiExplosion(character)
+            end)
+        else
+            if antiExplosionConnection then
+                antiExplosionConnection:Disconnect()
+                antiExplosionConnection = nil
+            end
+            if characterAddedConn then
+                characterAddedConn:Disconnect()
+                characterAddedConn = nil
+            end
+        end
+    end
+})
+
+-- ▼▼▼ 古い版から移植 (DefenseTab 自己防御) ▼▼▼
+DefenseTab:AddLabel("自己防御")
+
+DefenseTab:AddToggle({
+    Name = "エアサスペンション",
+    Color = Color3.fromRGB(240, 0, 0),
+    Default = false,
+    Save = true,
+    Flag = "SelfDefenseAirSuspend",
+    Callback = function(enabled)
+        if enabled then
+            autoDefendCoroutine = coroutine.create(function()
+                while wait(0.02) do
+                    local character = localPlayer.Character
+                    if character and character:FindFirstChild("Head") then
+                        local head = character.Head
+                        local partOwner = head:FindFirstChild("PartOwner")
+                        if partOwner then
+                            local attacker = Players:FindFirstChild(partOwner.Value)
+                            if attacker and attacker.Character then
+                                Struggle:FireServer()
+                                SetNetworkOwner:FireServer(attacker.Character.Head or attacker.Character.Torso, attacker.Character.HumanoidRootPart.FirePlayerPart.CFrame)
+                                task.wait(0.1)
+                                local target = attacker.Character:FindFirstChild("Torso")
+                                if target then
+                                    local velocity = target:FindFirstChild("l") or Instance.new("BodyVelocity")
+                                    velocity.Name = "l"
+                                    velocity.Parent = target
+                                    velocity.Velocity = Vector3.new(0, 50, 0)
+                                    velocity.MaxForce = Vector3.new(0, math.huge, 0)
+                                    Debris:AddItem(velocity, 100)
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+            coroutine.resume(autoDefendCoroutine)
+        else
+            if autoDefendCoroutine then
+                coroutine.close(autoDefendCoroutine)
+                autoDefendCoroutine = nil
+            end
+        end
+    end
+})
+
+DefenseTab:AddToggle({
+    Name = "アンチキック-サイレント",
+    Default = false,
+    Save = true,
+    Color = Color3.fromRGB(240, 0, 0),
+    Flag = "SelfDefenseKick",
+    Callback = function(enabled)
+        if enabled then
+            autoDefendKickCoroutine = coroutine.create(function()
+                while enabled do
+                    local character = localPlayer.Character
+                    if character and character:FindFirstChild("HumanoidRootPart") then
+                        local humanoidRootPart = character.HumanoidRootPart
+                        local head = character:FindFirstChild("Head")
+                        if head then
+                            local partOwner = head:FindFirstChild("PartOwner")
+                            if partOwner then
+                                local attacker = Players:FindFirstChild(partOwner.Value)
+                                if attacker and attacker.Character then
+                                    Struggle:FireServer()
+                                    SetNetworkOwner:FireServer(attacker.Character.HumanoidRootPart.FirePlayerPart, attacker.Character.HumanoidRootPart.FirePlayerPart.CFrame)
+                                    task.wait(0.1)
+                                    if not attacker.Character.HumanoidRootPart.FirePlayerPart:FindFirstChild("BodyVelocity") then
+                                        local bodyVelocity = Instance.new("BodyVelocity")
+                                        bodyVelocity.Name = "BodyVelocity"
+                                        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                                        bodyVelocity.Velocity = Vector3.new(0, 20, 0)
+                                        bodyVelocity.Parent = attacker.Character.HumanoidRootPart.FirePlayerPart
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    wait(0.02)
+                end
+            end)
+            coroutine.resume(autoDefendKickCoroutine)
+        else
+            if autoDefendKickCoroutine then
+                coroutine.close(autoDefendKickCoroutine)
+                autoDefendKickCoroutine = nil
+            end
+        end
+    end
+})
+-- ▲▲▲ 移植完了 ▲▲▲
+
+
+BlobmanTab:AddToggle({
+    Name = "Auto Sit on Blobman",
+    Default = false,
+    Color = Color3.fromRGB(240, 0, 0),
+    Save = true,
+    Flag = "AutoSitBlobman",
+    Callback = function(enabled)
+        AutoSitEnabled = enabled
+    end
+})
+
+-- ▼▼▼ Blobmanタブの修正 (自動更新対応) ▼▼▼
+
+local playerNames = getPlayerNamesForDropdown()
+
+-- プレイヤー選択ドロップダウン
+blobmanPlayerDropdown = BlobmanTab:AddDropdown({ -- グローバル変数に代入
+    Name = "対象プレイヤー選択",
+    Options = playerNames,
+    Default = playerNames[1],
+    Callback = function(selectedName)
+        selectedBlobmanTargetName = selectedName
+    end
+})
+-- 最初のプレイヤーをデフォルトで選択状態にする
+selectedBlobmanTargetName = playerNames[1]
+
+-- 選択キックボタン
+BlobmanTab:AddButton({
+    Name = "選択プレイヤーをキック (TP Grab)",
+    Callback = function()
+        -- 1. ブロブマンに乗っているか確認
+        local foundBlobman = false
+        local currentBlobman = nil
+        for i, v in pairs(game.Workspace:GetDescendants()) do
+            if v:IsA("Model") and v.Name == "CreatureBlobman" then
+                if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
+                    currentBlobman = v
+                    foundBlobman = true
+                    break
+                end
+            end
+        end
+
+        if not foundBlobman then
+            OrionLib:MakeNotification({
+                Name = "Error",
+                Content = "ブロブマンに乗ってからボタンを押してください", 
+                Image = "rbxassetid://4483345998", 
+                Time = 5
+            })
+            return
+        end
+
+        -- 2. 対象プレイヤーを取得
+        if not selectedBlobmanTargetName or selectedBlobmanTargetName == "（自分以外いません）" then
+            OrionLib:MakeNotification({
+                Name = "Error",
+                Content = "対象プレイヤーが選択されていません", 
+                Image = "rbxassetid://4483345998", 
+                Time = 5
+            })
+            return
+        end
+        
+        -- ▼▼▼ 修正: 「表示名 (UserID)」形式からPlayerオブジェクトを取得 ▼▼▼
+        local playerNameWithId = selectedBlobmanTargetName
+        local targetPlayer = nil
+        
+        -- まずUserIDで検索を試みる
+        local userIdStr = playerNameWithId:match("%((%d+)%)")
+        if userIdStr then
+            local userId = tonumber(userIdStr)
+            if userId then
+                targetPlayer = Players:GetPlayerByUserId(userId)
+            end
+        end
+        
+        -- UserIDで見つからなかった場合、表示名でフォールバック (括弧の前の部分)
+        if not targetPlayer then
+            local playerName = playerNameWithId:match("^(.*)%s%(")
+            if playerName then
+                targetPlayer = Players:FindFirstChild(playerName)
+            else
+                -- 括弧がない場合 (「（自分以外いません）」など)
+                targetPlayer = Players:FindFirstChild(playerNameWithId)
+            end
+        end
+        -- ▲▲▲ 修正完了 ▲▲▲
+
+
+        if not targetPlayer or targetPlayer == localPlayer or not targetPlayer.Character then
+            OrionLib:MakeNotification({
+                Name = "Error",
+                Content = "対象プレイヤーが見つからないか、無効です: " .. tostring(selectedBlobmanTargetName), 
+                Image = "rbxassetid://4483345998", 
+                Time = 5
+            })
+            return
+        end
+
+        -- 3. 実行
+        pcall(function()
+            blobGrabPlayerTP(targetPlayer, currentBlobman)
+        end)
+    end
+})
+
+BlobmanTab:AddParagraph("注意: プレイヤーの入退室があった場合、リストは自動で更新されます。")
+
+-- 手動更新ボタンを追加 (自動更新が失敗した場合のフォールバック)
+BlobmanTab:AddButton({
+    Name = "プレイヤーリストを更新",
+    Callback = updateBlobmanDropdown
+})
+
+-- ▲▲▲ BlobmanTabの修正完了 ▲▲▲
+
+local blobman1
+blobman1 = BlobmanTab:AddToggle({
+    Name = "Loop TP & Grab (全員対象)", -- 名前を分かりやすく変更
+    Color = Color3.fromRGB(240, 0, 0),
+    Default = false,
+    Callback = function(enabled)
+        if enabled then
+            loopTpCoroutine = coroutine.create(function()
+                local foundBlobman = false
+                for i, v in pairs(game.Workspace:GetDescendants()) do
+                    if v:IsA("Model") and v.Name == "CreatureBlobman" then
+                        if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
+                            blobman = v
+                            foundBlobman = true
+                            break
+                        end
+                    end
+                end
+                if not foundBlobman then
+                    OrionLib:MakeNotification({
+                        Name = "Error",
+                        Content = "ブロブマンに乗ってからトグルをオンにしてください", 
+                        Image = "rbxassetid://4483345998", 
+                        Time = 5
+                    })
+                    blobman1:Set(false)
+                    blobman = nil
+                    return
+                end
+                currentLoopTpPlayerIndex = 1
+                loopTPFunction(blobman)
+            end)
+            coroutine.resume(loopTpCoroutine)
+        else
+            if loopTpCoroutine then
+                coroutine.close(loopTpCoroutine)
+                loopTpCoroutine = nil
+                blobman = nil
+            end
+        end
+    end
+})
+
+BlobmanTab:AddSlider({
+    Name = "TP & Grab Delay (全員対象ループ用)", -- 名前を分かりやすく変更
+    Min = 0.0005,
+    Max = 1,
+    Color = Color3.fromRGB(240, 0, 0),
+    ValueName = "sec",
+    Increment = 0.001,
+    Default = _G.BlobmanDelay,
+    Callback = function(value)
+        _G.BlobmanDelay = value
+    end
+})
+
+-- ▼▼▼ 新機能: 選択プレイヤーループキック ▼▼▼
 local loopKickToggle
 loopKickToggle = BlobmanTab:AddToggle({
     Name = "選択プレイヤーをループキック",
     Default = false,
     Color = Color3.fromRGB(240, 0, 0),
-    Save = false,
+    Save = false, -- セーブはしない方が安全
     Callback = function(enabled)
         if enabled then
+            -- 1. ブロブマンに乗っているか確認
             local currentBlobman = nil
             for i, v in pairs(game.Workspace:GetDescendants()) do
                 if v:IsA("Model") and v.Name == "CreatureBlobman" then
@@ -1222,6 +1732,7 @@ loopKickToggle = BlobmanTab:AddToggle({
                 return
             end
 
+            -- 2. 対象プレイヤーを取得 (キックボタンと同じロジック)
             if not selectedBlobmanTargetName or selectedBlobmanTargetName == "（自分以外いません）" then
                 OrionLib:MakeNotification({Name = "Error", Content = "対象プレイヤーが選択されていません", Image = "rbxassetid://4483345998", Time = 5})
                 if loopKickToggle then loopKickToggle:Set(false) end
@@ -1247,27 +1758,30 @@ loopKickToggle = BlobmanTab:AddToggle({
                 return
             end
             
-            selectedLoopKickTargetPlayer = targetPlayer
+            selectedLoopKickTargetPlayer = targetPlayer -- ターゲットをグローバル変数に保存
             OrionLib:MakeNotification({Name = "開始", Content = selectedLoopKickTargetPlayer.Name .. " のループキックを開始します。", Image = "rbxassetid://4483345998", Time = 3})
 
+            -- 3. ループコルーチンを開始
             loopKickCoroutine = coroutine.create(function()
                 local target = selectedLoopKickTargetPlayer
-                if not target then return end
+                if not target then return end -- 万が一のため
                 
                 while true do 
+                    -- a. ターゲットのキャラクターとHRPを待つ (リスポーン待機)
                     local targetCharacter = target.Character
                     if not targetCharacter or not targetCharacter:FindFirstChild("HumanoidRootPart") or targetCharacter:FindFirstChildOfClass("Humanoid").Health <= 0 then
                         OrionLib:MakeNotification({Name = "待機中", Content = target.Name .. " のリスポーンを待っています...", Image = "rbxassetid://4483345998", Time = 2})
                         target.CharacterAdded:Wait()
                         targetCharacter = target.Character
-                        task.wait(1)
+                        task.wait(1) -- キャラクターが完全にロードされるのを待つ
                     end
                     
-                    if not targetCharacter then task.wait(0.5); continue end
+                    if not targetCharacter then task.wait(0.5); continue end -- 稀なエラー防止
                     
                     local targetHrp = targetCharacter:WaitForChild("HumanoidRootPart")
                     local targetHumanoid = targetCharacter:WaitForChildOfClass("Humanoid")
                     
+                    -- b. ブロブマンに乗っているか再確認 (降りていたら停止)
                     local blobman = nil
                     for i, v in pairs(game.Workspace:GetDescendants()) do
                         if v:IsA("Model") and v.Name == "CreatureBlobman" then
@@ -1280,10 +1794,11 @@ loopKickToggle = BlobmanTab:AddToggle({
                     
                     if not blobman then
                         OrionLib:MakeNotification({Name = "停止", Content = "ブロブマンから降りました。ループを停止します。", Image = "rbxassetid://4483345998", Time = 5})
-                        if loopKickToggle then loopKickToggle:Set(false) end
-                        coroutine.yield()
+                        if loopKickToggle then loopKickToggle:Set(false) end -- トグルを自動でOFFにする
+                        coroutine.yield() -- コルーチンを終了
                     end
 
+                    -- c. TP & Grab
                     if targetHrp and targetHumanoid.Health > 0 then
                         OrionLib:MakeNotification({Name = "実行", Content = target.Name .. " にTPして掴みます。", Image = "rbxassetid://4483345998", Time = 2})
                         pcall(function()
@@ -1291,22 +1806,27 @@ loopKickToggle = BlobmanTab:AddToggle({
                         end)
                     end
                     
+                    -- d. 死亡待機
                     OrionLib:MakeNotification({Name = "待機中", Content = target.Name .. " が飛ばされるか死亡するのを待っています...", Image = "rbxassetid://4483345998", Time = 3})
                     
+                    -- プレイヤーが掴まれている間、または死ぬまで待つ
                     while target.IsHeld and target.IsHeld.Value == true and targetHumanoid.Health > 0 do
                         task.wait(0.1)
                     end
                     
+                    -- Flingされた後、または死んだ後
                     if targetHumanoid.Health > 0 then
+                        -- Flingされてまだ生きている場合、死ぬまで待つ
                         targetHumanoid.Died:Wait()
                     end
                     
-                    task.wait(1)
+                    task.wait(1) -- リスポーン処理のための猶予
                 end
             end)
             coroutine.resume(loopKickCoroutine)
 
         else
+            -- トグルがOFFにされた時の処理
             if loopKickCoroutine then
                 coroutine.close(loopKickCoroutine)
                 loopKickCoroutine = nil
@@ -1322,29 +1842,10 @@ loopKickToggle = BlobmanTab:AddToggle({
 })
 
 BlobmanTab:AddParagraph("ループキックの注意:", "「選択プレイヤーをループキック」は、あなたがブロブマンに乗っている間、選択したプレイヤーを掴み続けます。掴んだ後、あなた自身で飛ばす（Fling）操作をしてください。ターゲットがリスポーンすると自動で再度掴みにいきます。")
+-- ▲▲▲ 新機能追加完了 ▲▲▲
 
--- ESPタブの実装
-ESPTab:AddLabel("ESP機能")
 
-ESPTab:AddToggle({
-    Name = "ESPを有効化",
-    Default = false,
-    Color = Color3.fromRGB(0, 255, 0),
-    Save = true,
-    Flag = "ESPToggle",
-    Callback = function(enabled)
-        if enabled then
-            enableESP()
-            OrionLib:MakeNotification({Name = "ESP", Content = "ESPを有効にしました", Image = "rbxassetid://4483345998", Time = 3})
-        else
-            disableESP()
-            OrionLib:MakeNotification({Name = "ESP", Content = "ESPを無効にしました", Image = "rbxassetid://4483345998", Time = 3})
-        end
-    end
-})
-
-ESPTab:AddParagraph("説明", "ESPを有効にすると、全プレイヤーの頭上にアイコンと表示名が表示されます。重なった場合は自動で位置を調整します。")
-
+-- ▼▼▼ 古い版から移植 (FunTab) ▼▼▼
 FunTab:AddLabel("クローン操作")
 
 FunTab:AddSlider({
@@ -1462,10 +1963,12 @@ FunTab:AddButton({
     Name = "Disconnect Clones",
     Callback = function()
         cleanupConnections(connections)
-        connections = {}
+        connections = {} -- 接続テーブルをクリア
     end
 })
+-- ▲▲▲ 移植完了 ▲▲▲
 
+-- ▼▼▼ 古い版から移植 (ScriptTab) ▼▼▼
 ScriptTab:AddButton({
     Name = "Infinite Yield",
     Callback = function()
@@ -1486,7 +1989,9 @@ ScriptTab:AddButton({
         loadstring(game:HttpGet("https://raw.githubusercontent.com/Babyhamsta/RBLX_Scripts/main/Universal/BypassedDarkDexV3.lua", true))()
     end
 })
+-- ▲▲▲ 移植完了 ▲▲▲
 
+-- ▼▼▼ 古い版から移植 (AuraTab) ▼▼▼
 AuraTab:AddLabel("オーラ")
 
 AuraTab:AddSlider({
@@ -1586,7 +2091,7 @@ AuraTab:AddToggle({
                                                     part.CanCollide = false
                                                 end
                                             end
-                                            force.Force = Vector3.new(0, -1200, 0)
+                                            force.Force = Vector3.new(0, -1200, 0) -- 修正: 奈落なのでマイナス方向
                                         end
                                     end
                                 end
@@ -1650,7 +2155,7 @@ AuraTab:AddToggle({
                                         local playerHumanoidRootPart = player.Character.HumanoidRootPart
                                         platform.Position = playerHumanoidRootPart.Position - Vector3.new(0, 3.994, 0)
                                     else
-                                        if platform then platform:Destroy() end
+                                        if platform then platform:Destroy() end -- 修正: nilチェック
                                         platforms[player] = nil
                                     end
                                 end
@@ -1724,7 +2229,7 @@ AuraTab:AddToggle({
 AuraTab:AddDropdown({
     Name = "キックの種類",
     Options = {"サイレント", "空"},
-    Default = "サイレント",
+    Default = "サイレント", -- 修正: デフォルト値を設定
     Save = true,
     Flag = "KickModeFlag",
     Callback = function(selected)
@@ -1758,7 +2263,7 @@ AuraTab:AddToggle({
                                         local distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
                                         if distance <= auraRadius then
                                             local head = playerCharacter:FindFirstChild("Head")
-                                            while distance <= auraRadius and player.Character and player.Character:FindFirstChild("Torso") do
+                                            while distance <= auraRadius and player.Character and player.Character:FindFirstChild("Torso") do -- 修正: ループ条件追加
                                                 SetNetworkOwner:FireServer(playerTorso, playerCharacter.HumanoidRootPart.CFrame)
                                                 distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
                                                 for _, part in pairs(poisonHurtParts) do
@@ -1796,7 +2301,9 @@ AuraTab:AddToggle({
         end
     end
 })
+-- ▲▲▲ 移植完了 ▲▲▲
 
+-- ▼▼▼ 古い版から移植 (CharacterTab) ▼▼▼
 CharacterTab:AddToggle({
     Name = "しゃがみ速度",
     Default = false,
@@ -1808,7 +2315,7 @@ CharacterTab:AddToggle({
             crouchSpeedCoroutine = coroutine.create(function()
                 while true do
                     pcall(function()
-                        if not playerCharacter or not playerCharacter:FindFirstChild("Humanoid") then return end
+                        if not playerCharacter or not playerCharacter:FindFirstChild("Humanoid") then return end -- 修正: playerCharacter nilチェック
                         if playerCharacter.Humanoid.WalkSpeed == 5 then
                             playerCharacter.Humanoid.WalkSpeed = crouchWalkSpeed
                         end
@@ -1820,7 +2327,7 @@ CharacterTab:AddToggle({
         elseif crouchSpeedCoroutine then
             coroutine.close(crouchSpeedCoroutine)
             crouchSpeedCoroutine = nil
-            if playerCharacter and playerCharacter:FindFirstChild("Humanoid") then
+            if playerCharacter and playerCharacter:FindFirstChild("Humanoid") then -- 修正: nilチェック
                 playerCharacter.Humanoid.WalkSpeed = 16
             end
         end
@@ -1853,7 +2360,7 @@ CharacterTab:AddToggle({
             crouchJumpCoroutine = coroutine.create(function()
                 while true do
                     pcall(function()
-                        if not playerCharacter or not playerCharacter:FindFirstChild("Humanoid") then return end
+                        if not playerCharacter or not playerCharacter:FindFirstChild("Humanoid") then return end -- 修正: nilチェック
                         if playerCharacter.Humanoid.JumpPower == 12 then
                             playerCharacter.Humanoid.JumpPower = crouchJumpPower
                         end
@@ -1865,7 +2372,7 @@ CharacterTab:AddToggle({
         elseif crouchJumpCoroutine then
             coroutine.close(crouchJumpCoroutine)
             crouchJumpCoroutine = nil
-            if playerCharacter and playerCharacter:FindFirstChild("Humanoid") then
+            if playerCharacter and playerCharacter:FindFirstChild("Humanoid") then -- 修正: nilチェック
                 playerCharacter.Humanoid.JumpPower = 24
             end
         end
@@ -1886,6 +2393,8 @@ CharacterTab:AddSlider({
         crouchJumpPower = value
     end
 })
+-- ▲▲▲ 移植完了 ▲▲▲
+
 
 ExplosionTab:AddDropdown({
     Name = "トイロード",
@@ -1896,6 +2405,7 @@ ExplosionTab:AddDropdown({
     end    
 })
 
+-- ▼▼▼ 古い版から移植 (ExplosionTab Max missiles) ▼▼▼
 ExplosionTab:AddSlider({
     Name = "Max amount of missiles",
     Min = 1,
@@ -1910,6 +2420,7 @@ ExplosionTab:AddSlider({
         _G.MaxMissiles = value
     end
 })
+-- ▲▲▲ 移植完了 ▲▲▲
 
 ExplosionTab:AddToggle({
     Name = "オートリロードキャッシュ",
@@ -1922,6 +2433,7 @@ ExplosionTab:AddToggle({
     end
 })
 
+-- ▼▼▼ 古い版から移植 (KeybindsTab) ▼▼▼
 local KeybindSection = KeybindsTab:AddSection({Name = "Player Keybinds"})
 KeybindSection:AddParagraph("Tip", "Press while looking at a player")
 
@@ -1950,7 +2462,7 @@ KeybindSection:AddBind({
                 local bodyVelocity = Instance.new("BodyVelocity")
                 bodyVelocity.Parent = character.Torso
                 bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                bodyVelocity.Velocity = Vector3.new(0, -40, 0)
+                bodyVelocity.Velocity = Vector3.new(0, -40, 0) -- 修正: 速度を少し上げた
                 character.Torso.CanCollide = false
                 task.wait(1)
                 character.Torso.CanCollide = false
@@ -1989,16 +2501,17 @@ KeybindSection:AddBind({
                     platform.Transparency = 1
                     platform.CanCollide = true
                     platform.Parent = character
+                    -- 修正: ループが止まらない問題を修正 (コルーチン化)
                     coroutine.wrap(function()
                         while character and character.Parent and platform and platform.Parent do
                             wait()
                             if character:FindFirstChild("HumanoidRootPart") then
                                 platform.Position = character.HumanoidRootPart.Position - Vector3.new(0, 3.994, 0)
                             else
-                                break
+                                break -- HRPがなくなったら終了
                             end
                         end 
-                        if platform then platform:Destroy() end
+                        if platform then platform:Destroy() end -- ループ終了時にプラットフォーム削除
                     end)()
                 end
             end
@@ -2065,7 +2578,7 @@ KeybindSection:AddBind({
                 if not toysFolder:FindFirstChild("Campfire") then
                     spawnItem("Campfire", Vector3.new(-72.9304581, -5.96906614, -265.543732))
                 end
-                local campfire = toysFolder:WaitForChild("Campfire")
+                local campfire = toysFolder:WaitForChild("Campfire") -- 修正: WaitForChild
                 local firePlayerPart
                 SetNetworkOwner:FireServer(character.HumanoidRootPart, character.HumanoidRootPart.CFrame)
                 for _, part in pairs(campfire:GetChildren()) do
@@ -2303,7 +2816,7 @@ KeybindSection2:AddBind({
             OrionLib:MakeNotification({Name = "No bombs", Content = "There are no cached bombs to explode", Image = "rbxassetid://4483345998", Time = 2})
             return
         end
-        local nearest = getNearestPlayer()
+        local nearest = getNearestPlayer() -- 修正: 先にプレイヤー取得
         if not nearest or not nearest.Character then 
             OrionLib:MakeNotification({Name = "Error", Content = "最も近いプレイヤーが見つかりませんでした", Image = "rbxassetid://4483345998", Time = 2})
             return 
@@ -2477,6 +2990,8 @@ KeybindSection2:AddBind({
         Debris:AddItem(lightbitcon2, 1)
     end
 })
+-- ▲▲▲ 移植完了 ▲▲▲
+
 
 DevTab:AddToggle({
     Name = "ラグドールオール",
@@ -2541,8 +3056,8 @@ end)
 game:GetService("Players").PlayerRemoving:Connect(function(player)
     if player == localPlayer then
         if loopTpCoroutine then coroutine.close(loopTpCoroutine) end
-        if blobmanCoroutine then coroutine.close(blobmanCoroutine) end
-        if loopKickCoroutine then coroutine.close(loopKickCoroutine) end
+        if blobmanCoroutine then coroutine.close(blobmanCoroutine) end -- 移植された可能性のあるコルーチンを閉じる
+        if loopKickCoroutine then coroutine.close(loopKickCoroutine) end -- ループキックも閉じる
     end
 end)
 
@@ -2555,8 +3070,8 @@ OrionLib:MakeNotification({
 
 OrionLib:Init()
 
+-- スクリプト起動時に一度ドロップダウンを初期化
 updateBlobmanDropdown()
 
 print("🎮 野獣のおちんちんハブ - スクリプト読み込み完了!")
 print("✅ すべての機能が正常に初期化されました")
-print("🆕 ESP機能が追加されました - ESPタブから有効化できます")
