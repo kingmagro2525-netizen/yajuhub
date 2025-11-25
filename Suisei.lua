@@ -12,13 +12,15 @@ local service = setmetatable({}, {
     end,
 })
 
--- Orion Libraryのロード
+-- Orion Libraryのロード (修正済み: 実行可能なライブラリのURLを使用する必要があります)
+-- ⚠️ 注意: ここでは一般的なOrion LibraryのロードURLを使用しています。
+-- もしオリオンライブラリーの正しい実行可能URLが異なる場合は、以下の行のURLを差し替えてください。
 local OrionLib = nil
-local ols, olr = pcall(function()
+local success, result = pcall(function()
     OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Polinorsik/Orion-Z-Library/refs/heads/main/README.md"))()
 end)
 
-if (not ols or not OrionLib) then
+if (not success or not OrionLib) then
     local s, r = pcall(function()
         service.StarterGui:SetCore("MakeNotification", {
             Title = "Suisei Hub",
@@ -28,11 +30,13 @@ if (not ols or not OrionLib) then
     if (not s) then
         warn(r)
     end
-    return warn("[Suisei Hub] Critical Error\nError Message: " .. olr)
+    -- 失敗メッセージをresultで表示 (OrionLibのロードが失敗した理由)
+    return warn("[Suisei Hub] Critical Error\nError Message: " .. tostring(result))
 end
 
 -- WindUIの通知機能をOrionのNotifyに置き換えるためのラッパー関数
 local function windNotify(data)
+    -- OrionLibのMakeNotificationはTitleとTextではなくNameとContentを使用します
     OrionLib:MakeNotification({
         Name = data.Title,
         Content = data.Content,
@@ -91,7 +95,11 @@ do
         task.spawn(task.delay, 1, game.Destroy, b)
     end
     local function SetNetworkOwner(part)
-        service.ReplicatedStorage.GrabEvents.SetNetworkOwner:FireServer(part, getLocalRoot().CFrame)
+        -- SetNetworkOwnerEventがReplicatedStorage直下にあると仮定
+        local setNetOwnerEvent = service.ReplicatedStorage:FindFirstChild("GrabEvents") and service.ReplicatedStorage.GrabEvents:FindFirstChild("SetNetworkOwner")
+        if (setNetOwnerEvent and setNetOwnerEvent:IsA("RemoteEvent") and getLocalRoot()) then
+            setNetOwnerEvent:FireServer(part, getLocalRoot().CFrame)
+        end
     end
     local function GetNearParts(origin, radius)
         return workspace:GetPartBoundsInRadius(origin, radius)
@@ -116,7 +124,8 @@ do
         b.D = 5e3
         b.Parent = part
         task.spawn(function()
-            b.ReachedTarget:Wait()
+            -- ReachedTargetはBodyPositionでは使えないため、適当な待機時間に変更
+            task.wait(0.5)
             pcall(game.Destroy, b)
             for _, v in ipairs(part.Parent:GetDescendants()) do
                 if (v:IsA("BasePart")) then
@@ -151,35 +160,54 @@ do
         getLocalRoot().CFrame = pos
     end
     local function lag(value)
-        for _ = 1, value do
-            service.ReplicatedStorage.GrabEvents.CreateGrabLine:FireServer()
+        local createGrabLineEvent = service.ReplicatedStorage:FindFirstChild("GrabEvents") and service.ReplicatedStorage.GrabEvents:FindFirstChild("CreateGrabLine")
+        if (createGrabLineEvent and createGrabLineEvent:IsA("RemoteEvent")) then
+            for _ = 1, value do
+                createGrabLineEvent:FireServer()
+            end
         end
     end
     local function ping(value)
-        for _ = 1, value do
-            service.ReplicatedStorage.GrabEvents.ExtendGrabLine:FireServer(string.rep("Balls Balls Balls Balls", value))
+        local extendGrabLineEvent = service.ReplicatedStorage:FindFirstChild("GrabEvents") and service.ReplicatedStorage.GrabEvents:FindFirstChild("ExtendGrabLine")
+        if (extendGrabLineEvent and extendGrabLineEvent:IsA("RemoteEvent")) then
+            for _ = 1, value do
+                extendGrabLineEvent:FireServer(string.rep("Balls Balls Balls Balls", value))
+            end
         end
     end
     local function createLine(part)
-        service.ReplicatedStorage.GrabEvents.CreateGrabLine:FireServer(part, CFrame.identity)
+        local createGrabLineEvent = service.ReplicatedStorage:FindFirstChild("GrabEvents") and service.ReplicatedStorage.GrabEvents:FindFirstChild("CreateGrabLine")
+        if (createGrabLineEvent and createGrabLineEvent:IsA("RemoteEvent")) then
+            createGrabLineEvent:FireServer(part, CFrame.identity)
+        end
     end
     local function ungrab(part)
-        service.ReplicatedStorage.GrabEvents.DestroyGrabLine:FireServer(part)
+        local destroyGrabLineEvent = service.ReplicatedStorage:FindFirstChild("GrabEvents") and service.ReplicatedStorage.GrabEvents:FindFirstChild("DestroyGrabLine")
+        if (destroyGrabLineEvent and destroyGrabLineEvent:IsA("RemoteEvent")) then
+            destroyGrabLineEvent:FireServer(part)
+        end
     end
     local function kickGrab(player)
         local char = player.Character
         if (not char) then return end
         local root = get(char, "HumanoidRootPart")
         local fpp = get(root, "FirePlayerPart")
-        fpp.Size = Vector3.new(4.5, 5.5, 4.5)
-        fpp.CollisionGroup = "1"
-        fpp.CanQuery = true
+        if fpp then
+            fpp.Size = Vector3.new(4.5, 5.5, 4.5)
+            fpp.CollisionGroup = "1"
+            fpp.CanQuery = true
+        end
     end
     local function getInv()
-        return get(workspace, getLocalPlayer().Name .. "SpawnedInToys")
+        if (getLocalPlayer()) then
+            return get(workspace, getLocalPlayer().Name .. "SpawnedInToys")
+        end
     end
     local function spawntoy(name, cframe, vector3)
-        local toy = service.ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer(table.unpack({
+        local spawnToyRemote = service.ReplicatedStorage:FindFirstChild("MenuToys") and service.ReplicatedStorage.MenuToys:FindFirstChild("SpawnToyRemoteFunction")
+        if (not spawnToyRemote or not spawnToyRemote:IsA("RemoteFunction")) then return end
+
+        local toy = spawnToyRemote:InvokeServer(table.unpack({
             [1] = name,
             [2] = cframe,
             [3] = vector3 or Vector3.zero
@@ -188,7 +216,10 @@ do
         return r
     end
     local function destroyToy(model)
-        service.ReplicatedStorage.MenuToys.DestroyToy:FireServer(model)
+        local destroyToyEvent = service.ReplicatedStorage:FindFirstChild("MenuToys") and service.ReplicatedStorage.MenuToys:FindFirstChild("DestroyToy")
+        if (destroyToyEvent and destroyToyEvent:IsA("RemoteEvent")) then
+            destroyToyEvent:FireServer(model)
+        end
     end
     curAntiDetectPart = nil
     local function AntiDetect()
@@ -200,7 +231,7 @@ do
                     exists = true
                     if (get(v.StickyPart, "PartOwner")) then destroyToy(v) end
                     if (get(v.SoundPart, "PartOwner")) then destroyToy(v) end
-                    if (v.StickyPart.StickyWeld.Part1 and v.StickyPart.StickyWeld.Part1:IsDescendantOf(getLocalChar())) then return end
+                    if (v.StickyPart.StickyWeld and v.StickyPart.StickyWeld.Part1 and v.StickyPart.StickyWeld.Part1:IsDescendantOf(getLocalChar())) then return end
                     destroyToy(v)
                     break
                 end
@@ -208,16 +239,20 @@ do
         end
         if (not exists) then
             curAntiDetectPart = spawntoy("NinjaShuriken", getLocalRoot().CFrame)
-            repeat task.wait() until (get(getInv(), "NinjaShuriken"))
-            SetNetworkOwner(curAntiDetectPart.SoundPart)
-            curAntiDetectPart.SoundPart.CFrame = getLocalRoot().CFrame + Vector3.new(0, .5, 0)
+            repeat task.wait() until (curAntiDetectPart and get(getInv(), "NinjaShuriken"))
+            if (curAntiDetectPart and curAntiDetectPart.SoundPart) then
+                SetNetworkOwner(curAntiDetectPart.SoundPart)
+                curAntiDetectPart.SoundPart.CFrame = getLocalRoot().CFrame + Vector3.new(0, .5, 0)
+            end
         end
-        repeat task.wait() until (get(getInv(), "NinjaShuriken"))
-        curAntiDetectPart.SoundPart.CFrame = getLocalRoot().CFrame + Vector3.new(0, .5, 0)
-        local w = Instance.new("WeldConstraint")
-        w.Part0 = curAntiDetectPart.SoundPart
-        w.Part1 = getLocalRoot()
-        w.Parent = getLocalRoot()
+        repeat task.wait() until (curAntiDetectPart and get(getInv(), "NinjaShuriken"))
+        if (curAntiDetectPart and curAntiDetectPart.SoundPart and getLocalRoot()) then
+            curAntiDetectPart.SoundPart.CFrame = getLocalRoot().CFrame + Vector3.new(0, .5, 0)
+            local w = Instance.new("WeldConstraint")
+            w.Part0 = curAntiDetectPart.SoundPart
+            w.Part1 = getLocalRoot()
+            w.Parent = getLocalRoot()
+        end
     end
     local IsSafespot = false
     local function Safespot()
@@ -230,15 +265,20 @@ do
             p.Size = Vector3.new(128, 4, 128)
             IsSafespot = true
         end
-        getLocalRoot().CFrame = CFrame.new(1e4, 1e4 + 10, 1e4)
+        if (getLocalRoot()) then
+            getLocalRoot().CFrame = CFrame.new(1e4, 1e4 + 10, 1e4)
+        end
     end
 
     local function ragdoll()
-        local args = {
-            [1] = getLocalRoot(),
-            [2] = 0
-        }
-        service.ReplicatedStorage.CharacterEvents.RagdollRemote:FireServer(unpack(args))
+        local ragdollRemote = service.ReplicatedStorage:FindFirstChild("CharacterEvents") and service.ReplicatedStorage.CharacterEvents:FindFirstChild("RagdollRemote")
+        if (ragdollRemote and ragdollRemote:IsA("RemoteEvent") and getLocalRoot()) then
+            local args = {
+                [1] = getLocalRoot(),
+                [2] = 0
+            }
+            ragdollRemote:FireServer(table.unpack(args))
+        end
     end
 
     local function BlackBoxpos()
@@ -247,63 +287,76 @@ do
 
     --// BLOBMAN
     local function getBlobman()
-        local v = get(getInv(), "CreatureBlobman", true)
-        if (not v) then
-            for _, p in ipairs(workspace.PlotItems:GetChildren()) do
-                if (p) then
-                    local m = get(p, "CreatureBlobman")
-                    if (not m) or (m and m.PlayerValue.Value ~= getLocalPlayer().Name) then
-                        windNotify({
-                            Title = "Suisei Hub",
-                            Content = "Blobman not found!",
-                            Duration = 5
-                        })
-                        return
+        local v = get(getInv(), "CreatureBlobman")
+        if (v) then
+            -- 自分のインベントリに見つかった場合
+            if (v.ClassName ~= "Model") then return false end
+            if (not get(v, "VehicleSeat")) then return false end
+            return v
+        end
+
+        -- PlotItemsから探す（自分がOwnerでないBlobmanを探す処理は冗長なので削除または簡略化）
+        for _, p in ipairs(workspace.PlotItems:GetChildren()) do
+            if (p) then
+                local m = get(p, "CreatureBlobman")
+                if (m and m:IsA("Model")) then
+                    -- ここでPlayerValue.Valueのチェックを行わないと他人のBlobmanも取得してしまう可能性があるため、修正
+                    local pv = m:FindFirstChild("PlayerValue")
+                    if (pv and pv:IsA("StringValue") and pv.Value == getLocalPlayer().Name) then
+                        if (not get(m, "VehicleSeat")) then return false end
+                        return m
                     end
-                    v = m
                 end
             end
         end
-        if (v and v.ClassName ~= "Model") then return false end
-        if (v and not get(v, "VehicleSeat")) then return false end
-        --[[if(not get(v.VehicleSeat,"SeatWeld"))then return false end
-        if(v.VehicleSeat.SeatWeld.Part1~=getLocalRoot())then return false end]]
-        return v
+        return nil
     end
+
     local function spawnBlobman()
         local blobman = spawntoy("CreatureBlobman", getLocalRoot().CFrame)
         return blobman
     end
     local function blobGrab(blob, target, side)
-        local args = {
-            [1] = get(blob, side .. "Detector"),
-            [2] = target,
-            [3] = get(get(blob, side .. "Detector"), side .. "Weld")
-        }
-        blob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(unpack(args))
+        local creatureGrabEvent = blob and blob:FindFirstChild("BlobmanSeatAndOwnerScript") and blob.BlobmanSeatAndOwnerScript:FindFirstChild("CreatureGrab")
+        if (creatureGrabEvent and creatureGrabEvent:IsA("RemoteEvent") and get(blob, side .. "Detector") and target) then
+            local args = {
+                [1] = get(blob, side .. "Detector"),
+                [2] = target,
+                [3] = get(get(blob, side .. "Detector"), side .. "Weld")
+            }
+            creatureGrabEvent:FireServer(table.unpack(args))
+        end
     end
     local function blobDrop(blob, target, side)
-        local args = {
-            [1] = get(blob, side .. "Detector"),
-            [2] = target
-        }
-        blob.BlobmanSeatAndOwnerScript.CreatureDrop:FireServer(unpack(args))
+        local creatureDropEvent = blob and blob:FindFirstChild("BlobmanSeatAndOwnerScript") and blob.BlobmanSeatAndOwnerScript:FindFirstChild("CreatureDrop")
+        if (creatureDropEvent and creatureDropEvent:IsA("RemoteEvent") and get(blob, side .. "Detector") and target) then
+            local args = {
+                [1] = get(blob, side .. "Detector"),
+                [2] = target
+            }
+            creatureDropEvent:FireServer(table.unpack(args))
+        end
     end
     local function sirentBlobGrab(blob, target, side)
-        local args = {
-            [1] = get(blob, side .. "Detector"),
-            [2] = target,
-            [3] = get(blob, side .. "Detector").AttachPlayer
-        }
-        blob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(unpack(args))
+        local creatureGrabEvent = blob and blob:FindFirstChild("BlobmanSeatAndOwnerScript") and blob.BlobmanSeatAndOwnerScript:FindFirstChild("CreatureGrab")
+        if (creatureGrabEvent and creatureGrabEvent:IsA("RemoteEvent") and get(blob, side .. "Detector") and target) then
+            local args = {
+                [1] = get(blob, side .. "Detector"),
+                [2] = target,
+                [3] = get(blob, side .. "Detector").AttachPlayer
+            }
+            creatureGrabEvent:FireServer(table.unpack(args))
+        end
     end
     local function blobBring(blob, target, side)
         local pos = getLocalRoot().CFrame
-        getLocalRoot().CFrame = target.CFrame
-        task.wait(.25)
-        blobGrab(blob, target, side)
-        task.wait(.25)
-        getLocalRoot().CFrame = pos
+        if (getLocalRoot()) then
+            getLocalRoot().CFrame = target.CFrame
+            task.wait(.25)
+            blobGrab(blob, target, side)
+            task.wait(.25)
+            getLocalRoot().CFrame = pos
+        end
     end
     local function blobKick(blob, target, side)
         blobGrab(blob, getLocalRoot(), side)
@@ -322,10 +375,14 @@ do
         return getLocalPlayer():IsFriendsWith(p.UserId)
     end
     local function IsInPlot(p)
-        return p.InPlot.Value
+        -- InPlot ValueObjectの存在を確認
+        local inPlotValue = p:FindFirstChild("InPlot")
+        return inPlotValue and inPlotValue:IsA("BoolValue") and inPlotValue.Value
     end
     local function IsInOwnedPlot(p)
-        return p.InOwnedPlot.Value
+        -- InOwnedPlot ValueObjectの存在を確認
+        local inOwnedPlotValue = p:FindFirstChild("InOwnedPlot")
+        return inOwnedPlotValue and inOwnedPlotValue:IsA("BoolValue") and inOwnedPlotValue.Value
     end
 
     local function getPlayerFromName(name)
@@ -349,6 +406,7 @@ do
             local s = Instance.new("Sound", service.JointsService)
             s.SoundId = id
             s:Play()
+            task.delay(s.TimeLength, game.Destroy, s) -- 再生後に破棄
             return s
         end)
     end
@@ -357,19 +415,36 @@ do
         local pos = getLocalRoot().CFrame
         task.spawn(function(...)
             local parts = { "Head", "Torso", "HumanoidRootPart" }
-            for _, p in pairs(parts) do get(getLocalChar(), p).CanCollide = false end
-            getLocalRoot().CFrame = CFrame.new(root.Position - root.CFrame.LookVector * 15)
-            task.wait(0.1)
-            workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, root.Position)
+            for _, p in pairs(parts) do 
+                local part = get(getLocalChar(), p)
+                if part then part.CanCollide = false end
+            end
+            
+            if getLocalRoot() and workspace.CurrentCamera then
+                getLocalRoot().CFrame = CFrame.new(root.Position - root.CFrame.LookVector * 15)
+                task.wait(0.1)
+                workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, root.Position)
+            end
+
             for _ = 1, 4 do SetNetworkOwner(root) task.wait(0.05) end
-            local look = workspace.CurrentCamera.CFrame
+            local look = workspace.CurrentCamera and workspace.CurrentCamera.CFrame
             task.wait(0.1)
             func(...)
-            workspace.CurrentCamera.CFrame = look
+
+            if workspace.CurrentCamera and look then
+                workspace.CurrentCamera.CFrame = look
+            end
             task.wait(0.1)
-            for _, p in pairs(parts) do get(getLocalChar(), p).CanCollide = true end
-            getLocalRoot().CFrame = pos
-            Velocity(getLocalRoot(), Vector3.zero)
+            
+            for _, p in pairs(parts) do 
+                local part = get(getLocalChar(), p)
+                if part then part.CanCollide = true end
+            end
+            
+            if getLocalRoot() then
+                getLocalRoot().CFrame = pos
+                Velocity(getLocalRoot(), Vector3.zero)
+            end
         end, ...)
     end
 
@@ -410,7 +485,7 @@ do
 
     windNotify({
         Title = "Suisei Hub",
-        Content = "Hello, " .. getLocalPlayer().DisplayName,
+        Content = "Hello, " .. (getLocalPlayer() and getLocalPlayer().DisplayName or "Guest"),
         Duration = 5
     })
     windNotify({
@@ -472,14 +547,14 @@ do
     local config = {
         Movements = {
             CrouchSpeedHack = {
-                Value = getLocalHum().WalkSpeed,
+                Value = getLocalHum() and getLocalHum().WalkSpeed or 16,
                 Loop = false
             },
             SpeedHack = {
-                Value = getLocalHum().WalkSpeed
+                Value = getLocalHum() and getLocalHum().WalkSpeed or 16
             },
             JumppowerHack = {
-                Value = getLocalHum().JumpPower
+                Value = getLocalHum() and getLocalHum().JumpPower or 50
             },
             Freeze = {
                 Value = false,
@@ -496,7 +571,7 @@ do
             },
             Teleports = {
                 Target = {
-                    Value = false
+                    Value = getLocalPlayer() and getLocalPlayer().Name or ""
                 },
                 Barn = {
                     CFrame = CFrame.new(-234, 85, -311)
@@ -692,7 +767,7 @@ do
             },
             Control = {
                 Target = {
-                    Value = false
+                    Value = nil
                 },
                 Value = false
             },
@@ -705,7 +780,7 @@ do
         },
         Blobman = {
             Target = {
-                Value = nil
+                Value = getLocalPlayer() and getLocalPlayer().Name or ""
             },
             ArmSide = {
                 Value = "Left"
@@ -728,7 +803,7 @@ do
         },
         Snipes = {
             Target = {
-                Value = nil
+                Value = getLocalPlayer() and getLocalPlayer().Name or ""
             },
             LoopVoid = {
                 Value = false
@@ -790,16 +865,16 @@ do
                 Value = 32
             },
             KickMethod = {
-                "Void"
+                Value = "Void"
             },
             SpeedHackMethod = {
-                "CFrame"
+                Value = "CFrame"
             },
             AutoSpeedHackMethod = {
                 Value = false
             },
             FlyMethod = {
-                "Velocity"
+                Value = "Velocity"
             },
             DebugMode = {
                 Value = false
@@ -811,7 +886,8 @@ do
     local function updateESP()
         for i = #__esp, 1, -1 do
             local v = __esp[i]
-            if (not config.Visuals.ESP.Value or not v or not v.Parent) then
+            -- vの親がDestroyされていても、OrionLibのHighlightのParentは残る可能性があるため、vの存在チェックとconfig値で判断
+            if (not config.Visuals.ESP.Value or not v) then
                 pcall(game.Destroy, v)
                 table.remove(__esp, i)
             else
@@ -833,8 +909,8 @@ do
         --// MOVEMENTS
         -- WindUI Slider -> Orion Slider
         __movements:AddSlider("CrouchingSpeed", "Speed (Crouching)", "Speed (Crouching)",
-            getLocalHum().WalkSpeed, 0, 150, 1, function(value)
-                getLocalHum().WalkSpeed = value
+            getLocalHum() and getLocalHum().WalkSpeed or 16, 0, 150, 1, function(value)
+                if getLocalHum() then getLocalHum().WalkSpeed = value end
                 config.Movements.CrouchSpeedHack.Value = value
             end
         )
@@ -844,8 +920,8 @@ do
         end)
         -- WindUI Slider -> Orion Slider
         __movements:AddSlider("Jumppower", "Jumppower", "Jumppower",
-            getLocalHum().JumpPower, 0, 150, 1, function(value)
-                getLocalHum().JumpPower = value
+            getLocalHum() and getLocalHum().JumpPower or 50, 0, 150, 1, function(value)
+                if getLocalHum() then getLocalHum().JumpPower = value end
                 config.Movements.JumppowerHack.Value = value
             end
         )
@@ -855,7 +931,7 @@ do
         end)
         -- WindUI Slider -> Orion Slider
         __movements:AddSlider("Speed", "Speed", "Speed",
-            getLocalHum().WalkSpeed, 0, 150, 1, function(value)
+            getLocalHum() and getLocalHum().WalkSpeed or 16, 0, 150, 1, function(value)
                 config.Movements.SpeedHack.Value = value
             end
         )
@@ -873,7 +949,7 @@ do
         end)
         -- WindUI Toggle (Checkbox) -> Orion Toggle
         __movements:AddToggle("Freeze", "Freeze", false, function(value)
-            if (value) then
+            if (value and getLocalRoot()) then
                 config.Movements.Freeze.CFrame = getLocalRoot().CFrame
             end
             config.Movements.Freeze.Value = value
@@ -882,7 +958,7 @@ do
         __movements:AddLabel("Teleports") -- Dividerの代わりにLabelで区切り
 
         -- WindUI Input -> Orion Input
-        __movements:AddInput("TPTarget", "Target", getLocalPlayer().Name, function(value)
+        __movements:AddInput("TPTarget", "Target", config.Movements.Teleports.Target.Value, function(value)
             config.Movements.Teleports.Target.Value = value
         end)
         -- WindUI Button -> Orion Button
@@ -890,7 +966,7 @@ do
             local t = getPlayerFromName(config.Movements.Teleports.Target.Value)
             if (not t or not t.Character) then return end
             local root = get(t.Character, "HumanoidRootPart")
-            if (not root) then return end
+            if (not root or not getLocalRoot()) then return end
             getLocalRoot().CFrame = root.CFrame
         end)
         -- WindUI Button -> Orion Button
@@ -945,6 +1021,7 @@ do
         end)
     end
 
+    ---
     do
         --// PLAYERS
         local antiDetectToggle = __players:AddToggle("AntiDetect", "Anti Detect", false, function(value)
@@ -970,6 +1047,7 @@ do
         end)
     end
 
+    ---
     do
         --// VISUALS
         __visuals:AddToggle("ESP", "ESP", false, function(value)
@@ -994,6 +1072,7 @@ do
         end)
     end
 
+    ---
     do
         --// COMBATS
         __combats:AddToggle("AntiGrab", "Anti Grab", false, function(value)
@@ -1065,6 +1144,7 @@ do
         end)
     end
 
+    ---
     do
         --// AURAS
         __auras:AddToggle("VoidAura", "Void Aura", false, function(value)
@@ -1093,6 +1173,7 @@ do
         end)
     end
 
+    ---
     do
         --// GRABS (OnChildAddedイベント内で処理されるため、トグルのみ)
         __grabs:AddToggle("VoidGrab", "Void Grab", false, function(value)
@@ -1121,6 +1202,7 @@ do
         end)
     end
 
+    ---
     do
         --// MISCS
         __miscs:AddToggle("NWOAura", "Network Owner Aura", false, function(value)
@@ -1140,9 +1222,10 @@ do
         end)
     end
 
+    ---
     do
         --// BLOBMAN
-        __blobmans:AddInput("BlobmanTarget", "Target Name", getLocalPlayer().Name, function(value)
+        __blobmans:AddInput("BlobmanTarget", "Target Name", config.Blobman.Target.Value, function(value)
             config.Blobman.Target.Value = value
         end)
         __blobmans:AddDropdown("BlobmanArmSide", "Arm Side", "Left", { "Left", "Right" }, function(value)
@@ -1156,13 +1239,13 @@ do
         end)
         __blobmans:AddButton("Sit Blobman", function()
             local blob = getBlobman()
-            if (blob and not getLocalHum().Sit) then
+            if (blob and getLocalHum() and not getLocalHum().Sit) then
                 blob.VehicleSeat:Sit(getLocalHum())
             end
         end)
         __blobmans:AddButton("Unsit Blobman", function()
             local blob = getBlobman()
-            if (blob and getLocalHum().Sit) then
+            if (blob and getLocalHum() and getLocalHum().Sit) then
                 getLocalHum().Sit = false
             end
         end)
@@ -1183,7 +1266,7 @@ do
                 task.spawn(function()
                     local root = get(t.Character, "HumanoidRootPart")
                     local b = getBlobman()
-                    if (not root or not b) then return end
+                    if (not root or not b or not getLocalRoot()) then return end
                     local pos = getLocalRoot().CFrame
                     getLocalRoot().CFrame = root.CFrame
                     blobBring(b, root, config.Blobman.ArmSide.Value)
@@ -1194,7 +1277,7 @@ do
                             task.wait()
                             if (IsInRadius(root, getLocalRoot().Position, 12)) then
                                 task.wait(1)
-                                getLocalHum().Sit = false
+                                if getLocalHum() then getLocalHum().Sit = false end
                                 break
                             end
                         end
@@ -1208,6 +1291,7 @@ do
                 if (t) then
                     local root = get(t.Character, "HumanoidRootPart")
                     local b = getBlobman()
+                    if (not root or not b or not getLocalRoot()) then return end
                     local pos = getLocalRoot().CFrame
                     blobBring(b, root, config.Blobman.ArmSide.Value)
                     task.wait()
@@ -1221,9 +1305,9 @@ do
                 task.spawn(function()
                     local root = get(t.Character, "HumanoidRootPart")
                     local b = getBlobman()
-                    if (not root or not b) then return end
+                    if (not root or not b or not getLocalRoot()) then return end
                     local pos = getLocalRoot().CFrame
-                    if (not getLocalHum().Sit) then b.VehicleSeat:Sit(getLocalHum()) task.wait(0.1) end -- 座る処理を追加
+                    if (getLocalHum() and not getLocalHum().Sit) then b.VehicleSeat:Sit(getLocalHum()) task.wait(0.1) end -- 座る処理を追加
                     blobGrab(b, getLocalRoot(), config.Blobman.ArmSide.Value)
                     task.wait()
                     blobBring(b, root, config.Blobman.ArmSide.Value)
@@ -1240,16 +1324,16 @@ do
                 task.spawn(function()
                     local root = get(t.Character, "HumanoidRootPart")
                     local b = getBlobman()
-                    if (not root or not b) then return end
+                    if (not root or not b or not getLocalRoot()) then return end
                     local pos = getLocalRoot().CFrame
-                    if (not getLocalHum().Sit) then b.VehicleSeat:Sit(getLocalHum()) task.wait(0.1) end -- 座る処理を追加
+                    if (getLocalHum() and not getLocalHum().Sit) then b.VehicleSeat:Sit(getLocalHum()) task.wait(0.1) end -- 座る処理を追加
                     blobGrab(b, getLocalRoot(), config.Blobman.ArmSide.Value)
                     task.wait()
                     blobBring(b, root, config.Blobman.ArmSide.Value)
                     task.wait()
                     getLocalRoot().CFrame = CFrame.new(1e32, -16, 1e32)
                     task.wait(1)
-                    getLocalHum().Sit = false
+                    if getLocalHum() then getLocalHum().Sit = false end
                     task.wait(.1)
                     getLocalRoot().CFrame = pos
                     task.wait()
@@ -1263,9 +1347,9 @@ do
                 task.spawn(function()
                     local root = get(t.Character, "HumanoidRootPart")
                     local b = getBlobman()
-                    if (not root or not b) then return end
+                    if (not root or not b or not getLocalRoot()) then return end
                     local pos = getLocalRoot().CFrame
-                    if (not getLocalHum().Sit) then b.VehicleSeat:Sit(getLocalHum()) task.wait(0.1) end -- 座る処理を追加
+                    if (getLocalHum() and not getLocalHum().Sit) then b.VehicleSeat:Sit(getLocalHum()) task.wait(0.1) end -- 座る処理を追加
                     task.wait(.5)
                     getLocalRoot().CFrame = root.CFrame
                     task.wait()
@@ -1280,58 +1364,60 @@ do
             if (not blob) then
                 blob = spawnBlobman()
             end
-            if (not getLocalHum().Sit) then
+            if (getLocalHum() and not getLocalHum().Sit and blob and blob.VehicleSeat) then
                 blob.VehicleSeat:Sit(getLocalHum())
             end
             task.wait()
+            if (not getLocalRoot() or not getLocalHum() or not blob or not getLocalHum().Sit) then return end
+            
             local pos = getLocalRoot().CFrame
-            if (blob and getLocalHum().Sit) then
-                blobGrab(blob, getLocalRoot(), config.Blobman.ArmSide.Value)
-                for _, v in ipairs(service.Players:GetPlayers()) do
-                    if (v == getLocalPlayer()) then continue end
-                    if (not config.Settings.IgnoreIsInPlot.Value and IsInPlot(v)) then continue end
-                    if (config.Settings.IgnoreFriend.Value and IsFriend(v)) then continue end
-                    local character = v.Character
-                    if (not character) then continue end
-                    local root = get(character, "HumanoidRootPart")
-                    if (not root) then continue end
-                    getLocalRoot().CFrame = root.CFrame
-                    task.wait(.2)
-                    blobGrab(blob, root, config.Blobman.ArmSide.Value)
-                end
-                task.wait(.1)
-                getLocalRoot().CFrame = pos
-                destroyToy(blob)
+            
+            blobGrab(blob, getLocalRoot(), config.Blobman.ArmSide.Value)
+            for _, v in ipairs(service.Players:GetPlayers()) do
+                if (v == getLocalPlayer()) then continue end
+                if (not config.Settings.IgnoreIsInPlot.Value and IsInPlot(v)) then continue end
+                if (config.Settings.IgnoreFriend.Value and IsFriend(v)) then continue end
+                local character = v.Character
+                if (not character) then continue end
+                local root = get(character, "HumanoidRootPart")
+                if (not root) then continue end
+                getLocalRoot().CFrame = root.CFrame
+                task.wait(.2)
+                blobGrab(blob, root, config.Blobman.ArmSide.Value)
             end
+            task.wait(.1)
+            getLocalRoot().CFrame = pos
+            destroyToy(blob)
         end)
         __blobmans:AddButton("Kick All", function()
             local blob = getBlobman()
             if (not blob) then
                 blob = spawnBlobman()
             end
-            if (not getLocalHum().Sit) then
+            if (getLocalHum() and not getLocalHum().Sit and blob and blob.VehicleSeat) then
                 blob.VehicleSeat:Sit(getLocalHum())
             end
             task.wait()
+            if (not getLocalRoot() or not getLocalHum() or not blob or not getLocalHum().Sit) then return end
+            
             local pos = getLocalRoot().CFrame
-            if (blob and getLocalHum().Sit) then
-                blobGrab(blob, getLocalRoot(), config.Blobman.ArmSide.Value)
-                for _, v in ipairs(service.Players:GetPlayers()) do
-                    if (v == getLocalPlayer()) then continue end
-                    if (not config.Settings.IgnoreIsInPlot.Value and IsInPlot(v)) then continue end
-                    if (config.Settings.IgnoreFriend.Value and IsFriend(v)) then continue end
-                    local character = v.Character
-                    if (not character) then continue end
-                    local root = get(character, "HumanoidRootPart")
-                    if (not root) then continue end
-                    getLocalRoot().CFrame = root.CFrame
-                    task.wait(.25)
-                    blobKick(blob, root, config.Blobman.ArmSide.Value)
-                end
-                task.wait(.1)
-                getLocalRoot().CFrame = pos
-                destroyToy(blob)
+            
+            blobGrab(blob, getLocalRoot(), config.Blobman.ArmSide.Value)
+            for _, v in ipairs(service.Players:GetPlayers()) do
+                if (v == getLocalPlayer()) then continue end
+                if (not config.Settings.IgnoreIsInPlot.Value and IsInPlot(v)) then continue end
+                if (config.Settings.IgnoreFriend.Value and IsFriend(v)) then continue end
+                local character = v.Character
+                if (not character) then continue end
+                local root = get(character, "HumanoidRootPart")
+                if (not root) then continue end
+                getLocalRoot().CFrame = root.CFrame
+                task.wait(.25)
+                blobKick(blob, root, config.Blobman.ArmSide.Value)
             end
+            task.wait(.1)
+            getLocalRoot().CFrame = pos
+            destroyToy(blob)
         end)
 
         __blobmans:AddLabel("Blobman Aura/Loops")
@@ -1350,16 +1436,17 @@ do
         end)
     end
 
+    ---
     do
         --// SNIPES
-        __snipes:AddInput("SnipeTarget", "Target Name", getLocalPlayer().Name, function(value)
+        __snipes:AddInput("SnipeTarget", "Target Name", config.Snipes.Target.Value, function(value)
             config.Snipes.Target.Value = value
         end)
 
         __snipes:AddButton("Bring", function()
-            local pos = getLocalRoot().CFrame
+            local pos = getLocalRoot() and getLocalRoot().CFrame
             local t = getPlayerFromName(config.Snipes.Target.Value)
-            if (not t) then return end
+            if (not t or not pos) then return end
             local root = get(t.Character, "HumanoidRootPart")
             if (not root) then return end
             task.spawn(function()
@@ -1374,9 +1461,9 @@ do
         end)
         __snipes:AddButton("Void", function()
             task.spawn(function()
-                local pos = getLocalRoot().CFrame
+                local pos = getLocalRoot() and getLocalRoot().CFrame
                 local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (not t) then return end
+                if (not t or not pos) then return end
                 local root = get(t.Character, "HumanoidRootPart")
                 if (not root) then return end
                 Snipefunc(root, function()
@@ -1387,9 +1474,9 @@ do
         end)
         __snipes:AddButton("Kill", function()
             task.spawn(function()
-                local pos = getLocalRoot().CFrame
+                local pos = getLocalRoot() and getLocalRoot().CFrame
                 local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (not t) then return end
+                if (not t or not pos) then return end
                 local root = get(t.Character, "HumanoidRootPart")
                 if (not root) then return end
                 Snipefunc(root, function()
@@ -1401,9 +1488,9 @@ do
         end)
         __snipes:AddButton("Poison", function()
             task.spawn(function()
-                local pos = getLocalRoot().CFrame
+                local pos = getLocalRoot() and getLocalRoot().CFrame
                 local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (not t) then return end
+                if (not t or not pos) then return end
                 local root = get(t.Character, "HumanoidRootPart")
                 if (not root) then return end
                 Snipefunc(root, function()
@@ -1414,9 +1501,9 @@ do
         end)
         __snipes:AddButton("Ragdoll", function()
             task.spawn(function()
-                local pos = getLocalRoot().CFrame
+                local pos = getLocalRoot() and getLocalRoot().CFrame
                 local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (not t) then return end
+                if (not t or not pos) then return end
                 local root = get(t.Character, "HumanoidRootPart")
                 if (not root) then return end
                 Snipefunc(root, function()
@@ -1431,13 +1518,14 @@ do
         end)
         __snipes:AddButton("Death", function()
             task.spawn(function()
-                local pos = getLocalRoot().CFrame
+                local pos = getLocalRoot() and getLocalRoot().CFrame
                 local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (not t) then return end
+                if (not t or not pos) then return end
                 local root = get(t.Character, "HumanoidRootPart")
                 if (not root) then return end
                 Snipefunc(root, function()
-                    cget(root.Parent, "Humanoid"):ChangeState(Enum.HumanoidStateType.Dead)
+                    local hum = cget(root.Parent, "Humanoid")
+                    if hum then hum:ChangeState(Enum.HumanoidStateType.Dead) end
                     task.wait(.5)
                     ungrab(root)
                     getLocalRoot().CFrame = pos
@@ -1445,12 +1533,13 @@ do
             end)
         end)
         __snipes:AddButton("Fling", function()
-            local pos = getLocalRoot().CFrame
+            local pos = getLocalRoot() and getLocalRoot().CFrame
             local t = getPlayerFromName(config.Snipes.Target.Value)
-            if (not t) then return end
+            if (not t or not pos or not getLocalRoot()) then return end
             local root = get(t.Character, "HumanoidRootPart")
             if (not root) then return end
             local toy = spawntoy("YouDecoy", getLocalRoot().CFrame)
+            if (not toy or not toy.PrimaryPart) then return end
             task.wait(.3)
             getLocalRoot().CFrame = toy.PrimaryPart.CFrame
             task.wait(.1)
@@ -1490,10 +1579,12 @@ do
         end)
     end
 
+    ---
     do
         --// TROLLS
         __trolls:AddButton("Burn All", function()
-            local Oven = spawntoy("OvenDarkGray", getLocalRoot().CFrame)
+            local Oven = spawntoy("OvenDarkGray", getLocalRoot() and getLocalRoot().CFrame or CFrame.new(0, 0, 0))
+            if (not Oven or not Oven.ButtonOven or not Oven.SoundPart) then return end
             local Button = Oven.ButtonOven
             SetNetworkOwner(Button)
             ungrab(Button)
@@ -1514,7 +1605,8 @@ do
             destroyToy(Oven)
         end)
         __trolls:AddButton("Fire All", function()
-            local toy = spawntoy("Campfire", getLocalRoot().CFrame)
+            local toy = spawntoy("Campfire", getLocalRoot() and getLocalRoot().CFrame or CFrame.new(0, 0, 0))
+            if (not toy or not toy.SoundPart) then return end
             SetNetworkOwner(toy.SoundPart)
             for _, v in ipairs(service.Players:GetPlayers()) do
                 if (v == getLocalPlayer()) then continue end
@@ -1533,10 +1625,12 @@ do
         __trolls:AddToggle("LoudAll", "Loud All", false, function(value)
             config.Trolls.LoudAll.Value = value
             if (value) then
-                local SoundMain = spawntoy("BellBig", getLocalRoot().CFrame)
+                local SoundMain = spawntoy("BellBig", getLocalRoot() and getLocalRoot().CFrame or CFrame.new(0, 0, 0))
                 task.wait(.5)
-                config.Trolls.LoudAll.SoundPart.Value = SoundMain
-                SetNetworkOwner(SoundMain.SoundPart)
+                if SoundMain and SoundMain.SoundPart then
+                    config.Trolls.LoudAll.SoundPart.Value = SoundMain
+                    SetNetworkOwner(SoundMain.SoundPart)
+                end
             else
                 if (config.Trolls.LoudAll.SoundPart.Value) then
                     destroyToy(config.Trolls.LoudAll.SoundPart.Value)
@@ -1552,7 +1646,7 @@ do
         end)
         __trolls:AddToggle("ServerDestroyer", "Server Destroyer", false, function(value)
             config.Trolls.ServerDestroyer.Value = value
-            if (value) then
+            if (value and getLocalRoot()) then
                 config.Trolls.ServerDestroyer.CFrame = getLocalRoot().CFrame
             end
         end)
@@ -1574,7 +1668,9 @@ do
             task.spawn(function()
                 while (true) do
                     e.Size = e.Size + Vector3.one / 2
-                    e.CFrame = getLocalRoot().CFrame
+                    if getLocalRoot() then
+                        e.CFrame = getLocalRoot().CFrame
+                    end
                     e.Transparency = e.Transparency + .1
                     lag(4096)
                     task.wait()
@@ -1583,6 +1679,7 @@ do
         end)
     end
 
+    ---
     do
         --// SETTINGS
         -- OrionはConfigManagerを直接操作するUIを持たないため、Load/Save/DeleteボタンはOrionLibの機能に置き換え
@@ -1599,7 +1696,7 @@ do
             windNotify({ Title = "Suisei Hub", Content = "Config deleted!", Duration = 5 })
         end)
 
-        local AuraRadius = __settings:AddSlider("AuraRadius", "Aura Radius", "Aura Radius", 32, 0, 128, 1, function(value)
+        local AuraRadius = __settings:AddSlider("AuraRadius", "Aura Radius", "Aura Radius", 32, 0, 10000, 1, function(value)
             config.Settings.AuraRadius.Value = value
         end)
         __settings:AddButton("Infinite Aura Radius (NetworkOwner)", function()
@@ -1654,6 +1751,8 @@ do
         end)
 
         __settings:AddButton("Rejoin", function()
+            if not getLocalPlayer() or not service.TeleportService then return end
+            
             local s, r = pcall(function()
                 windNotify({
                     Title = "Suisei Hub",
@@ -1669,13 +1768,14 @@ do
             if (not s) then
                 windNotify({
                     Title = "Suisei Hub",
-                    Content = "Failed to rejoin!\n" .. r,
+                    Content = "Failed to rejoin!\n" .. tostring(r),
                     Duration = 5
                 })
             end
         end)
     end
 
+    ---
     do
         --// INFOS
         __infos:AddLabel("Discord Link")
@@ -1732,38 +1832,55 @@ do
     end)
 
     --// SLOTS
-    service.ReplicatedStorage.SlotEvents.SlotTime.OnClientEvent:Connect(function(i)
-        task.spawn(function()
-            config.Players.AutoSlot.Time = i
-            if (config.Players.AutoSlot.Time == 0 and config.Players.AutoSlot.Value) then
-                local p = getLocalRoot().CFrame
-                while (config.Players.AutoSlot.Time == 0 and config.Players.AutoSlot.Value) do
-                    for _, v in ipairs(workspace.Slots:GetChildren()) do
-                        task.wait(.1)
-                        local h = v.SlotHandle.Handle
-                        getLocalRoot().CFrame = h.CFrame
-                        task.wait(.2)
-                        SetNetworkOwner(h)
+    local SlotTimeEvent = service.ReplicatedStorage:FindFirstChild("SlotEvents") and service.ReplicatedStorage.SlotEvents:FindFirstChild("SlotTime")
+    if (SlotTimeEvent and SlotTimeEvent:IsA("RemoteEvent")) then
+        SlotTimeEvent.OnClientEvent:Connect(function(i)
+            task.spawn(function()
+                config.Players.AutoSlot.Time = i
+                if (config.Players.AutoSlot.Time == 0 and config.Players.AutoSlot.Value) then
+                    local p = getLocalRoot() and getLocalRoot().CFrame
+                    if (not p) then return end
+                    
+                    while (config.Players.AutoSlot.Time == 0 and config.Players.AutoSlot.Value) do
+                        local slotsFolder = workspace:FindFirstChild("Slots")
+                        if (slotsFolder) then
+                            for _, v in ipairs(slotsFolder:GetChildren()) do
+                                task.wait(.1)
+                                local h = v:FindFirstChild("SlotHandle") and v.SlotHandle:FindFirstChild("Handle")
+                                if (h and getLocalRoot()) then
+                                    getLocalRoot().CFrame = h.CFrame
+                                    task.wait(.2)
+                                    SetNetworkOwner(h)
+                                end
+                            end
+                        end
                     end
+                    task.wait(1.5)
+                    if getLocalRoot() then getLocalRoot().CFrame = p end
                 end
-                task.wait(1.5)
-                getLocalRoot().CFrame = p
-            end
+            end)
         end)
-    end)
+    end
 
     --// GRABPARTS AND BLACKHOLE
     workspace.ChildAdded:Connect(function(v)
         --// ANTIEXPLODE
         if (config.Combats.AntiExplode.Value) then
-            if (v.Name == "Part" and getLocalChar()) then
+            if (v.Name == "Part" and getLocalChar() and getLocalRoot()) then
                 local pos = (v.Position - getLocalRoot().Position).Magnitude
                 if (pos >= 4) then
                     getLocalRoot().Anchored = true
                     task.wait(.05)
                     while (get(getLocalChar(), "Ragdolled") and get(getLocalChar(), "Ragdolled").Value) do
-                        service.ReplicatedStorage.CharacterEvents.Struggle:FireServer(getLocalPlayer())
-                        service.ReplicatedStorage.GameCorrectionEvents.StopAllVelocity:FireServer()
+                        local struggleEvent = service.ReplicatedStorage:FindFirstChild("CharacterEvents") and service.ReplicatedStorage.CharacterEvents:FindFirstChild("Struggle")
+                        local stopVelocityEvent = service.ReplicatedStorage:FindFirstChild("GameCorrectionEvents") and service.ReplicatedStorage.GameCorrectionEvents:FindFirstChild("StopAllVelocity")
+                        
+                        if (struggleEvent and struggleEvent:IsA("RemoteEvent") and getLocalPlayer()) then
+                            struggleEvent:FireServer(getLocalPlayer())
+                        end
+                        if (stopVelocityEvent and stopVelocityEvent:IsA("RemoteEvent")) then
+                            stopVelocityEvent:FireServer()
+                        end
                         task.wait()
                     end
                     getLocalRoot().Anchored = false
@@ -1778,7 +1895,10 @@ do
             local DragPart = get(v, "DragPart")
             local GrabPart = get(v, "GrabPart")
             local GrabAttach = get(GrabPart, "GrabAttach")
-            local Grabbing = get(GrabPart, "WeldConstraint").Part1
+            local GrabPartWeld = get(GrabPart, "WeldConstraint")
+            local Grabbing = GrabPartWeld and GrabPartWeld.Part1
+
+            if (not Grabbing) then return end
 
             if (config.Settings.DebugMode.Value) then
                 windNotify({
@@ -1817,13 +1937,22 @@ do
             Grabfunc(function()
                 if (config.Combats.InfLine.Value) then
                     local DragPartC = DragPart:Clone()
-                    DragPartC.AlignPosition.Attachment1 = DragPartC.DragAttach
+                    if DragPartC.AlignPosition and DragPartC.DragAttach then
+                        DragPartC.AlignPosition.Attachment1 = DragPartC.DragAttach
+                    end
                     DragPartC.Parent = v
-                    config.Combats.InfLine.Dist.Value = (DragPartC.Position - workspace.CurrentCamera.CFrame.Position).Magnitude
-                    DragPartC.AlignOrientation.Enabled = false
-                    DragPart.AlignPosition.Enabled = false
+                    if DragPartC.Position and workspace.CurrentCamera then
+                        config.Combats.InfLine.Dist.Value = (DragPartC.Position - workspace.CurrentCamera.CFrame.Position).Magnitude
+                    end
+                    if DragPartC.AlignOrientation then
+                        DragPartC.AlignOrientation.Enabled = false
+                    end
+                    if DragPart and DragPart.AlignPosition then
+                        DragPart.AlignPosition.Enabled = false
+                    end
+                    
                     task.spawn(function()
-                        while (v.Parent) do
+                        while (v.Parent and DragPartC and workspace.CurrentCamera) do
                             DragPartC.Position = workspace.CurrentCamera.CFrame.Position + workspace.CurrentCamera.CFrame.LookVector * config.Combats.InfLine.Dist.Value
                             task.wait()
                         end
@@ -1834,9 +1963,9 @@ do
 
             Grabfunc(function()
                 v:GetPropertyChangedSignal("Parent"):Connect(function()
-                    if (not v.Parent and config.Combats.SuperStrength.Value) then
+                    if (not v.Parent and config.Combats.SuperStrength.Value and service.UserInputService) then
                         service.UserInputService.InputBegan:Once(function(i)
-                            if (i.UserInputType == Enum.UserInputType.MouseButton2) then
+                            if (i.UserInputType == Enum.UserInputType.MouseButton2 and Grabbing and Grabbing.Parent) then
                                 local vel = Instance.new("BodyVelocity", Grabbing)
                                 vel.MaxForce = Vector3.one * math.huge
                                 vel.Velocity = workspace.CurrentCamera.CFrame.LookVector * config.Combats.SuperStrength.Power.Value
@@ -1904,17 +2033,18 @@ do
                         SetNetworkOwner(Grabbing)
                     end
                     task.wait(.1)
-                    cget(Grabbing.Parent, "Humanoid"):ChangeState(Enum.HumanoidStateType.Dead)
+                    local hum = cget(Grabbing.Parent, "Humanoid")
+                    if hum then hum:ChangeState(Enum.HumanoidStateType.Dead) end
                     task.wait(.5)
                     ungrab(Grabbing)
                 end)
             end
             if (config.Grabs.NoclipGrab.Value) then
                 Grabfunc(function()
-                    while (Grabbing.Parent and v) do
-                        for _, v in ipairs(Grabbing.Parent:GetDescendants()) do
-                            if (v:IsA("BasePart")) then
-                                v.CanCollide = false
+                    while (Grabbing.Parent and v and v.Parent) do
+                        for _, part in ipairs(Grabbing.Parent:GetDescendants()) do
+                            if (part:IsA("BasePart")) then
+                                part.CanCollide = false
                             end
                         end
                         task.wait()
@@ -1934,8 +2064,8 @@ do
                             task.wait(.5)
                             ungrab(Grabbing)
                             task.spawn(function()
-                                while (p and root and root.Parent) do
-                                    if (hum and hum.FloorMaterial ~= Enum.Material.Air) then
+                                while (p and root and root.Parent and hum and getLocalRoot()) do
+                                    if (hum.FloorMaterial ~= Enum.Material.Air) then
                                         local pos = getLocalRoot().CFrame
                                         task.wait()
                                         getLocalRoot().CFrame = root.CFrame
@@ -1954,8 +2084,8 @@ do
                         elseif (config.Settings.KickMethod.Value == "Float") then
                             for _ = 1, 32 do
                                 SetNetworkOwner(root)
-                                hum:ChangeState(Enum.HumanoidStateType.Ragdoll)
-                                hum.Health = 0
+                                if hum then hum:ChangeState(Enum.HumanoidStateType.Ragdoll) end
+                                if hum then hum.Health = 0 end
                                 ungrab(root)
                             end
                         end
@@ -1965,8 +2095,10 @@ do
             if (config.Miscs.Control.Value) then
                 local p = service.Players:GetPlayerFromCharacter(Grabbing.Parent)
                 if (not p and cget(Grabbing.Parent, "Humanoid")) then
-                    SetNetworkOwner(Grabbing.Parent.PrimaryPart)
-                    config.Miscs.Control.Target.Value = Grabbing.Parent
+                    if Grabbing.Parent.PrimaryPart then
+                        SetNetworkOwner(Grabbing.Parent.PrimaryPart)
+                        config.Miscs.Control.Target.Value = Grabbing.Parent
+                    end
                 end
             end
         end
@@ -1984,6 +2116,13 @@ do
     local LoopKickTimer = 0
     local AntiKickDisablerTimer = 0
     loop.Event:Connect(function(dt)
+        -- ローカルプレイヤー、キャラクター、ヒューマノイド、ルートのチェック
+        local LocalPlayer = getLocalPlayer()
+        local LocalChar = getLocalChar()
+        local LocalHum = getLocalHum()
+        local LocalRoot = getLocalRoot()
+        if not LocalPlayer or not LocalChar or not LocalHum or not LocalRoot then return end
+
         --//DELTATIME/TIMER
         local altdt = 1 / 60
         AntiDetectTimer = AntiDetectTimer + dt
@@ -1999,72 +2138,62 @@ do
 
         --//MOVEMENTS
         if (config.Settings.AutoSpeedHackMethod.Value) then
-            if (getLocalHum() and getLocalHum().Sit) then
+            if (LocalHum.Sit) then
                 config.Settings.SpeedHackMethod.Value = "Velocity"
             else
                 config.Settings.SpeedHackMethod.Value = "CFrame"
             end
         end
         if (config.Movements.CrouchSpeedHack.Loop) then
-            getLocalHum().WalkSpeed = config.Movements.CrouchSpeedHack.Value
+            LocalHum.WalkSpeed = config.Movements.CrouchSpeedHack.Value
         end
         if (config.Movements.JumppowerHack.Loop) then
-            getLocalHum().JumpPower = config.Movements.JumppowerHack.Value
+            LocalHum.JumpPower = config.Movements.JumppowerHack.Value
         end
         if (config.Movements.Freeze.Value) then
-            if (getLocalRoot()) then
-                getLocalRoot().CFrame = config.Movements.Freeze.CFrame
-            end
+            LocalRoot.CFrame = config.Movements.Freeze.CFrame
         end
         if (config.Movements.Noclip.Value) then
-            if (getLocalChar()) then
-                for _, v in ipairs(getLocalChar():GetDescendants()) do
-                    if (v:IsA("BasePart")) then
-                        v.CanCollide = false
-                    end
+            for _, v in ipairs(LocalChar:GetDescendants()) do
+                if (v:IsA("BasePart")) then
+                    v.CanCollide = false
                 end
             end
         end
         if (config.Movements.Fly.Value) then
-            if (getLocalRoot() and getLocalHum()) then
-                getLocalHum().PlatformStand = true -- Fly中はPlatformStand
-                if (config.Settings.FlyMethod.Value == "Velocity") then
-                    local dir = Vector3.zero
-                    local look = workspace.CurrentCamera.CFrame.LookVector
-                    local right = workspace.CurrentCamera.CFrame.RightVector
-                    if (keys.W) then dir = dir + look end; if (keys.S) then dir = dir - look end
-                    if (keys.A) then dir = dir - right end; if (keys.D) then dir = dir + right end
-                    if (keys.Space) then dir = dir + Vector3.new(0, 1, 0) end; if (keys.Shift) then dir = dir - Vector3.new(0, 1, 0) end
-                    if (dir.Magnitude > 0) then
-                        dir = dir.Unit * config.Movements.SpeedHack.Value
-                        getLocalRoot().AssemblyLinearVelocity = dir
-                    else
-                        getLocalRoot().AssemblyLinearVelocity = Vector3.zero
-                        getLocalRoot().CFrame = CFrame.new(getLocalRoot().Position, getLocalRoot().Position + workspace.CurrentCamera.CFrame.LookVector)
-                    end
-                elseif (config.Settings.FlyMethod.Value == "CFrame") then
-                    local dir = Vector3.zero
-                    local look = workspace.CurrentCamera.CFrame.LookVector
-                    local right = workspace.CurrentCamera.CFrame.RightVector
-                    if (keys.W) then dir = dir + look end; if (keys.S) then dir = dir - look end
-                    if (keys.A) then dir = dir - right end; if (keys.D) then dir = dir + right end
-                    if (keys.Space) then dir = dir + Vector3.new(0, 1, 0) end; if (keys.Shift) then dir = dir - Vector3.new(0, 1, 0) end
-                    if (dir.Magnitude > 0) then
-                        dir = dir.Unit * config.Movements.SpeedHack.Value * altdt
-                        local targetPos = getLocalRoot().Position + dir
-                        getLocalRoot().CFrame = getLocalRoot().CFrame:Lerp(CFrame.new(targetPos, targetPos + workspace.CurrentCamera.CFrame.LookVector), .5)
-                    else
-                        getLocalRoot().AssemblyLinearVelocity = Vector3.zero
-                        getLocalRoot().CFrame = CFrame.new(getLocalRoot().Position, getLocalRoot().Position + workspace.CurrentCamera.CFrame.LookVector)
-                    end
+            LocalHum.PlatformStand = true -- Fly中はPlatformStand
+            if (config.Settings.FlyMethod.Value == "Velocity") then
+                local dir = Vector3.zero
+                local look = workspace.CurrentCamera.CFrame.LookVector
+                local right = workspace.CurrentCamera.CFrame.RightVector
+                if (keys.W) then dir = dir + look end; if (keys.S) then dir = dir - look end
+                if (keys.A) then dir = dir - right end; if (keys.D) then dir = dir + right end
+                if (keys.Space) then dir = dir + Vector3.new(0, 1, 0) end; if (keys.Shift) then dir = dir - Vector3.new(0, 1, 0) end
+                if (dir.Magnitude > 0) then
+                    dir = dir.Unit * config.Movements.SpeedHack.Value
+                    LocalRoot.AssemblyLinearVelocity = dir
+                else
+                    LocalRoot.AssemblyLinearVelocity = Vector3.zero
+                    LocalRoot.CFrame = CFrame.new(LocalRoot.Position, LocalRoot.Position + workspace.CurrentCamera.CFrame.LookVector)
                 end
-            else
-                -- Flyがオフになった際の処理を追加 (もしあれば)
+            elseif (config.Settings.FlyMethod.Value == "CFrame") then
+                local dir = Vector3.zero
+                local look = workspace.CurrentCamera.CFrame.LookVector
+                local right = workspace.CurrentCamera.CFrame.RightVector
+                if (keys.W) then dir = dir + look end; if (keys.S) then dir = dir - look end
+                if (keys.A) then dir = dir - right end; if (keys.D) then dir = dir + right end
+                if (keys.Space) then dir = dir + Vector3.new(0, 1, 0) end; if (keys.Shift) then dir = dir - Vector3.new(0, 1, 0) end
+                if (dir.Magnitude > 0) then
+                    dir = dir.Unit * config.Movements.SpeedHack.Value * altdt
+                    local targetPos = LocalRoot.Position + dir
+                    LocalRoot.CFrame = LocalRoot.CFrame:Lerp(CFrame.new(targetPos, targetPos + workspace.CurrentCamera.CFrame.LookVector), .5)
+                else
+                    LocalRoot.AssemblyLinearVelocity = Vector3.zero
+                    LocalRoot.CFrame = CFrame.new(LocalRoot.Position, LocalRoot.Position + workspace.CurrentCamera.CFrame.LookVector)
+                end
             end
         else
-            if (getLocalHum()) then
-                getLocalHum().PlatformStand = false
-            end
+            LocalHum.PlatformStand = false
         end
 
         --//PLAYERS
@@ -2075,19 +2204,17 @@ do
             AntiDetectTimer = 0
         end
         if (config.Players.AntiRagdoll.Value) then
-            if (getLocalHum() and ((getLocalHum():GetState() == Enum.HumanoidStateType.Ragdoll) or (getLocalHum():GetState() == Enum.HumanoidStateType.FallingDown))) then
+            if ((LocalHum:GetState() == Enum.HumanoidStateType.Ragdoll) or (LocalHum:GetState() == Enum.HumanoidStateType.FallingDown)) then
                 ragdoll()
-                getLocalHum():ChangeState(Enum.HumanoidStateType.Running) -- 変更状態をRunningに変更
+                LocalHum:ChangeState(Enum.HumanoidStateType.Running) -- 変更状態をRunningに変更
             end
         end
         if (config.Players.AntiTouch.Value) then
-            if (getLocalChar()) then
-                for _, v in ipairs(getLocalChar():GetDescendants()) do
-                    if (v:IsA("BasePart")) then
-                        v.Locked = true
-                        v.CanTouch = false
-                        v.CanQuery = false
-                    end
+            for _, v in ipairs(LocalChar:GetDescendants()) do
+                if (v:IsA("BasePart")) then
+                    v.Locked = true
+                    v.CanTouch = false
+                    v.CanQuery = false
                 end
             end
         end
@@ -2096,13 +2223,13 @@ do
                 if (v:IsA("Folder") and v.Name:find("SpawnedInToys") and not v:IsDescendantOf(getInv())) then
                     local banana = get(v, "FoodBanana")
                     if (banana) then
-                        for _, v in ipairs(banana:GetDescendants()) do
-                            if (v:IsA("BasePart")) then
-                                v.CanQuery = not config.Players.AntiBanana.Value
-                                v.CanTouch = not config.Players.AntiBanana.Value
+                        for _, part in ipairs(banana:GetDescendants()) do
+                            if (part:IsA("BasePart")) then
+                                part.CanQuery = not config.Players.AntiBanana.Value
+                                part.CanTouch = not config.Players.AntiBanana.Value
                                 if (config.Players.AntiBanana.Value) then
-                                    if (getLocalRoot() and IsInRadius(v, getLocalRoot().Position, 8)) then
-                                        SetNetworkOwner(v)
+                                    if (IsInRadius(part, LocalRoot.Position, 8)) then
+                                        SetNetworkOwner(part)
                                     end
                                 end
                             end
@@ -2114,9 +2241,7 @@ do
         end
         if (config.Players.Ragdoll.Value) then
             ragdoll()
-            if (getLocalHum()) then
-                getLocalHum().PlatformStand = true
-            end
+            LocalHum.PlatformStand = true
         end
         if (config.Players.AntiGucci.Value) then
             ragdoll()
@@ -2128,7 +2253,7 @@ do
             if (config.Visuals.ESP.Value) then
                 for _, p in ipairs(service.Players:GetPlayers()) do
                     local c = p.Character
-                    if (c) then
+                    if (c and p ~= LocalPlayer) then -- 自分自身はESPしない
                         addESP(c)
                     end
                 end
@@ -2139,95 +2264,99 @@ do
             workspace.CurrentCamera.FieldOfView = config.Visuals.FOV.Value
         end
         if (config.Visuals.TPS.Value) then
-            getLocalPlayer().CameraMaxZoomDistance = 100000
-            getLocalPlayer().CameraMode = Enum.CameraMode.Classic
-            if ((workspace.CurrentCamera.CFrame.Position - workspace.CurrentCamera.Focus.Position).Magnitude > getLocalPlayer().CameraMinZoomDistance) then
+            LocalPlayer.CameraMaxZoomDistance = 100000
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+            if ((workspace.CurrentCamera.CFrame.Position - workspace.CurrentCamera.Focus.Position).Magnitude > LocalPlayer.CameraMinZoomDistance) then
                 service.UserInputService.MouseIconEnabled = true
             else
                 service.UserInputService.MouseIconEnabled = false
             end
         else
-            getLocalPlayer().CameraMode = Enum.CameraMode.LockFirstPerson
+            LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
         end
 
         --//COMBATS
         do
             --// ANTIGRAB-REVENGE
-            if (getLocalChar()) then
-                local head = get(getLocalChar(), "Head")
-                if (head) then
-                    local owner = get(head, "PartOwner")
-                    local target
-                    if (owner and owner.Value) then
-                        target = get(service.Players, owner.Value)
+            local head = get(LocalChar, "Head")
+            if (head) then
+                local owner = get(head, "PartOwner")
+                local target
+                if (owner and owner.Value) then
+                    target = get(service.Players, owner.Value)
+                end
+                
+                -- AntiGrab Loop
+                task.spawn(function()
+                    while (owner and config.Combats.AntiGrab.Value) or (LocalPlayer.IsHeld and LocalPlayer.IsHeld.Value and config.Combats.AntiGrab.Value) do
+                        LocalRoot.Anchored = true
+                        
+                        local struggleEvent = service.ReplicatedStorage:FindFirstChild("CharacterEvents") and service.ReplicatedStorage.CharacterEvents:FindFirstChild("Struggle")
+                        local stopVelocityEvent = service.ReplicatedStorage:FindFirstChild("GameCorrectionEvents") and service.ReplicatedStorage.GameCorrectionEvents:FindFirstChild("StopAllVelocity")
+                        
+                        if (struggleEvent and struggleEvent:IsA("RemoteEvent")) then
+                            struggleEvent:FireServer(LocalPlayer)
+                        end
+                        if (stopVelocityEvent and stopVelocityEvent:IsA("RemoteEvent")) then
+                            stopVelocityEvent:FireServer()
+                        end
+                        task.wait()
                     end
-                    task.spawn(function()
-                        while (owner and config.Combats.AntiGrab.Value) or (getLocalPlayer().IsHeld and getLocalPlayer().IsHeld.Value and config.Combats.AntiGrab.Value) do
-                            if (getLocalRoot()) then
-                                getLocalRoot().Anchored = true
-                            end
-                            service.ReplicatedStorage.CharacterEvents.Struggle:FireServer(getLocalPlayer())
-                            service.ReplicatedStorage.GameCorrectionEvents.StopAllVelocity:FireServer()
-                            task.wait()
-                        end
-                        if (getLocalRoot()) then
-                            getLocalRoot().Anchored = false
-                        end
-                    end)
+                    LocalRoot.Anchored = false
+                end)
 
-                    do
-                        if (target) then
-                            local character = target.Character
-                            if (character) then
-                                local root = get(character, "HumanoidRootPart")
-                                if (root) then
-                                    if (config.Combats.Revenge.Void.Value) then
-                                        for _ = 1, 3 do
-                                            SetNetworkOwner(root)
-                                            task.wait(.1)
-                                            Velocity(root, Vector3.new(0, 1e4, 0))
-                                            task.wait()
-                                        end
-                                    end
-                                    if (config.Combats.Revenge.Kill.Value) then
-                                        for _ = 1, 3 do
-                                            SetNetworkOwner(root)
-                                            task.wait(.1)
-                                            MoveTo(root, CFrame.new(4096, -75, 4096))
-                                            Velocity(root, Vector3.new(0, -1e3, 0))
-                                            task.wait()
-                                        end
-                                    end
-                                    if (config.Combats.Revenge.Poison.Value) then
-                                        for _ = 1, 3 do
-                                            SetNetworkOwner(root)
-                                            task.wait(.1)
-                                            MoveTo(root, CFrame.new(58, -70, 271))
-                                            task.wait()
-                                        end
-                                    end
-                                    if (config.Combats.Revenge.Ragdoll.Value) then
-                                        for _ = 1, 3 do
-                                            local pos = root.CFrame
-                                            SetNetworkOwner(root)
-                                            task.wait(.1)
-                                            Velocity(root, Vector3.new(0, -64, 0))
-                                            task.wait()
-                                            MoveTo(root, pos)
-                                            Velocity(root, Vector3.zero)
-                                            task.wait()
-                                        end
-                                    end
-                                    if (config.Combats.Revenge.Death.Value) then
-                                        for _ = 1, 3 do
-                                            SetNetworkOwner(root)
-                                            task.wait(.1)
-                                            cget(root.Parent, "Humanoid"):ChangeState(Enum.HumanoidStateType.Dead)
-                                            task.wait(.5)
-                                            ungrab(root)
-                                            task.wait()
-                                        end
-                                    end
+                -- Revenge Actions
+                do
+                    if (target and target.Character) then
+                        local character = target.Character
+                        local root = get(character, "HumanoidRootPart")
+                        if (root) then
+                            if (config.Combats.Revenge.Void.Value) then
+                                for _ = 1, 3 do
+                                    SetNetworkOwner(root)
+                                    task.wait(.1)
+                                    Velocity(root, Vector3.new(0, 1e4, 0))
+                                    task.wait()
+                                end
+                            end
+                            if (config.Combats.Revenge.Kill.Value) then
+                                for _ = 1, 3 do
+                                    SetNetworkOwner(root)
+                                    task.wait(.1)
+                                    MoveTo(root, CFrame.new(4096, -75, 4096))
+                                    Velocity(root, Vector3.new(0, -1e3, 0))
+                                    task.wait()
+                                end
+                            end
+                            if (config.Combats.Revenge.Poison.Value) then
+                                for _ = 1, 3 do
+                                    SetNetworkOwner(root)
+                                    task.wait(.1)
+                                    MoveTo(root, CFrame.new(58, -70, 271))
+                                    task.wait()
+                                end
+                            end
+                            if (config.Combats.Revenge.Ragdoll.Value) then
+                                for _ = 1, 3 do
+                                    local pos = root.CFrame
+                                    SetNetworkOwner(root)
+                                    task.wait(.1)
+                                    Velocity(root, Vector3.new(0, -64, 0))
+                                    task.wait()
+                                    MoveTo(root, pos)
+                                    Velocity(root, Vector3.zero)
+                                    task.wait()
+                                end
+                            end
+                            if (config.Combats.Revenge.Death.Value) then
+                                for _ = 1, 3 do
+                                    SetNetworkOwner(root)
+                                    task.wait(.1)
+                                    local hum = cget(root.Parent, "Humanoid")
+                                    if hum then hum:ChangeState(Enum.HumanoidStateType.Dead) end
+                                    task.wait(.5)
+                                    ungrab(root)
+                                    task.wait()
                                 end
                             end
                         end
@@ -2236,38 +2365,47 @@ do
             end
         end
 
-        if (config.Combats.StrAntiGrab.Value and getLocalHum() and getLocalHum().Sit) then
-            service.ReplicatedStorage.CharacterEvents.Struggle:FireServer(getLocalPlayer())
-            service.ReplicatedStorage.GameCorrectionEvents.StopAllVelocity:FireServer()
-            getLocalHum().Sit = false
-            SetNetworkOwner(getLocalRoot())
+        if (config.Combats.StrAntiGrab.Value and LocalHum.Sit) then
+            local struggleEvent = service.ReplicatedStorage:FindFirstChild("CharacterEvents") and service.ReplicatedStorage.CharacterEvents:FindFirstChild("Struggle")
+            local stopVelocityEvent = service.ReplicatedStorage:FindFirstChild("GameCorrectionEvents") and service.ReplicatedStorage.GameCorrectionEvents:FindFirstChild("StopAllVelocity")
+            
+            if (struggleEvent and struggleEvent:IsA("RemoteEvent")) then
+                struggleEvent:FireServer(LocalPlayer)
+            end
+            if (stopVelocityEvent and stopVelocityEvent:IsA("RemoteEvent")) then
+                stopVelocityEvent:FireServer()
+            end
+            LocalHum.Sit = false
+            SetNetworkOwner(LocalRoot)
         end
 
         if (ExtinguisherTimer >= 1) then
             if (config.Combats.Extinguisher.Value) then
-                if (getLocalChar() and get(getLocalHum(), "FireDebounce") and get(getLocalHum(), "FireDebounce").Value) then
-                    local FireExtinguisher = spawntoy("FireExtinguisher", getLocalRoot().CFrame)
-                    for _, v in ipairs(FireExtinguisher:GetDescendants()) do
-                        if (v:IsA("BasePart")) then
-                            v.CanCollide = false
+                if (get(LocalHum, "FireDebounce") and get(LocalHum, "FireDebounce").Value) then
+                    local FireExtinguisher = spawntoy("FireExtinguisher", LocalRoot.CFrame)
+                    if (FireExtinguisher and FireExtinguisher.PrimaryPart) then
+                        for _, v in ipairs(FireExtinguisher:GetDescendants()) do
+                            if (v:IsA("BasePart")) then
+                                v.CanCollide = false
+                            end
                         end
+                        local pos = LocalRoot.Position - Vector3.new(0, 3, 0)
+                        local look = LocalRoot.CFrame.LookVector
+                        FireExtinguisher.PrimaryPart.CFrame = CFrame.new(pos, pos + look)
+                        task.delay(1, function()
+                            destroyToy(FireExtinguisher)
+                        end)
                     end
-                    local pos = getLocalRoot().Position - Vector3.new(0, 3, 0)
-                    local look = getLocalRoot().CFrame.LookVector
-                    FireExtinguisher.PrimaryPart.CFrame = CFrame.new(pos, pos + look)
-                    task.delay(1, function()
-                        destroyToy(FireExtinguisher)
-                    end)
                 end
             end
             ExtinguisherTimer = 0
         end
 
         if (AuraTimer >= .5) then
-            if (not getLocalRoot()) then return end
-            for _, v in ipairs(GetNearParts(getLocalRoot().Position, config.Settings.AuraRadius.Value)) do
-                if (not v.Anchored and not v:IsDescendantOf(getLocalChar()) and (v.Name == "HumanoidRootPart" or v.Name == "Torso" or v.Name == "Head")) then
+            for _, v in ipairs(GetNearParts(LocalRoot.Position, config.Settings.AuraRadius.Value)) do
+                if (not v.Anchored and not v:IsDescendantOf(LocalChar) and (v.Name == "HumanoidRootPart" or v.Name == "Torso" or v.Name == "Head")) then
                     local p = service.Players:GetPlayerFromCharacter(v.Parent)
+                    if (p and p == LocalPlayer) then continue end -- 自分自身は無視
                     if (IsFriend(p) and config.Settings.IgnoreFriend.Value) then continue end
                     if (not p and config.Settings.OnlyPlayer.Value) then continue end
                     if (config.Auras.VoidAura.Value) then
@@ -2321,11 +2459,14 @@ do
                     end
                     if (config.Auras.FireAura.Value) then
                         task.spawn(function()
-                            local e = spawntoy("Campfire", getLocalRoot().CFrame).SoundPart
-                            SetNetworkOwner(e)
-                            task.wait(.1)
-                            e.CFrame = v.CFrame
-                            task.delay(.5, destroyToy, e.Parent)
+                            local toy = spawntoy("Campfire", LocalRoot.CFrame)
+                            if (toy and toy.SoundPart) then
+                                local e = toy.SoundPart
+                                SetNetworkOwner(e)
+                                task.wait(.1)
+                                e.CFrame = v.CFrame
+                                task.delay(.5, destroyToy, e.Parent)
+                            end
                         end)
                     end
                     if (config.Auras.NoclipAura.Value) then
@@ -2343,35 +2484,49 @@ do
         if (config.Combats.AntiVoid.Value) then
             workspace.FallenPartsDestroyHeight = 0 / 0
             local rad = math.huge
-            if (getLocalRoot()) then
-                local height = -87.5
-                local Y = getLocalRoot().CFrame.Y
-                if (height >= Y) then
-                    service.ReplicatedStorage.CharacterEvents.Struggle:FireServer()
-                    service.ReplicatedStorage.GameCorrectionEvents.StopAllVelocity:FireServer()
-                    local p = workspace.SpawnLocation
-                    local pos = (p.Position + Vector3.new(math.random(-p.Size.X * 0.5, p.Size.X * 0.5), math.random(0, p.Size.Y), math.random(-p.Size.Z * 0.5, p.Size.Z * 0.5)))
-                    getLocalRoot().CFrame = (CFrame.new(pos, getLocalRoot().CFrame.LookVector))
-                    getLocalRoot().AssemblyLinearVelocity = Vector3.zero
-                    getLocalRoot().AssemblyAngularVelocity = Vector3.zero
-                    windNotify({
-                        Title = "Suisei Hub",
-                        Content = "Suisei saved you from the void!",
-                        Duration = 5
-                    })
+            local height = -87.5
+            local Y = LocalRoot.CFrame.Y
+            if (height >= Y) then
+                local struggleEvent = service.ReplicatedStorage:FindFirstChild("CharacterEvents") and service.ReplicatedStorage.CharacterEvents:FindFirstChild("Struggle")
+                local stopVelocityEvent = service.ReplicatedStorage:FindFirstChild("GameCorrectionEvents") and service.ReplicatedStorage.GameCorrectionEvents:FindFirstChild("StopAllVelocity")
+                
+                if (struggleEvent and struggleEvent:IsA("RemoteEvent")) then
+                    struggleEvent:FireServer()
                 end
+                if (stopVelocityEvent and stopVelocityEvent:IsA("RemoteEvent")) then
+                    stopVelocityEvent:FireServer()
+                end
+                
+                local p = workspace.SpawnLocation
+                local pos = (p.Position + Vector3.new(math.random(-p.Size.X * 0.5, p.Size.X * 0.5), math.random(0, p.Size.Y), math.random(-p.Size.Z * 0.5, p.Size.Z * 0.5)))
+                LocalRoot.CFrame = (CFrame.new(pos, LocalRoot.CFrame.LookVector))
+                LocalRoot.AssemblyLinearVelocity = Vector3.zero
+                LocalRoot.AssemblyAngularVelocity = Vector3.zero
+                windNotify({
+                    Title = "Suisei Hub",
+                    Content = "Suisei saved you from the void!",
+                    Duration = 5
+                })
             end
         end
 
         if (config.Combats.AntiFar.Value) then
-            if (getLocalRoot() and not IsInRadius(getLocalRoot(), Vector3.zero, 4096)) then
-                service.ReplicatedStorage.CharacterEvents.Struggle:FireServer()
-                service.ReplicatedStorage.GameCorrectionEvents.StopAllVelocity:FireServer()
+            if (not IsInRadius(LocalRoot, Vector3.zero, 4096)) then
+                local struggleEvent = service.ReplicatedStorage:FindFirstChild("CharacterEvents") and service.ReplicatedStorage.CharacterEvents:FindFirstChild("Struggle")
+                local stopVelocityEvent = service.ReplicatedStorage:FindFirstChild("GameCorrectionEvents") and service.ReplicatedStorage.GameCorrectionEvents:FindFirstChild("StopAllVelocity")
+                
+                if (struggleEvent and struggleEvent:IsA("RemoteEvent")) then
+                    struggleEvent:FireServer()
+                end
+                if (stopVelocityEvent and stopVelocityEvent:IsA("RemoteEvent")) then
+                    stopVelocityEvent:FireServer()
+                end
+                
                 local p = workspace.SpawnLocation
                 local pos = (p.Position + Vector3.new(math.random(-p.Size.X * 0.5, p.Size.X * 0.5), math.random(0, p.Size.Y), math.random(-p.Size.Z * 0.5, p.Size.Z * 0.5)))
-                getLocalRoot().CFrame = (CFrame.new(pos, getLocalRoot().CFrame.LookVector))
-                getLocalRoot().AssemblyLinearVelocity = Vector3.zero
-                getLocalRoot().AssemblyAngularVelocity = Vector3.zero
+                LocalRoot.CFrame = (CFrame.new(pos, LocalRoot.CFrame.LookVector))
+                LocalRoot.AssemblyLinearVelocity = Vector3.zero
+                LocalRoot.AssemblyAngularVelocity = Vector3.zero
                 windNotify({
                     Title = "Suisei Hub",
                     Content = "Suisei saved you from being too far!",
@@ -2385,52 +2540,55 @@ do
         end
 
         if (config.Combats.AimBot.Value) then
-            for _, v in ipairs(GetNearParts(getLocalRoot().CFrame.Position, config.Combats.AimBot.Radius.Value)) do
-                if (not v.Anchored and not v:IsDescendantOf(getLocalChar())) then
+            for _, v in ipairs(GetNearParts(LocalRoot.CFrame.Position, config.Combats.AimBot.Radius.Value)) do
+                if (not v.Anchored and not v:IsDescendantOf(LocalChar)) then
                     local p = service.Players:GetPlayerFromCharacter(v.Parent)
+                    if (p and p == LocalPlayer) then continue end
                     if (IsFriend(p) and config.Settings.IgnoreFriend.Value) then continue end
                     if (not p and config.Settings.OnlyPlayer.Value) then continue end
                     if (v.Name ~= config.Combats.AimBot.Part.Value) then continue end
-                    workspace.CurrentCamera.CFrame =
-                        workspace.CurrentCamera.CFrame:Lerp(
-                            CFrame.lookAt(
-                                workspace.CurrentCamera.CFrame.Position,
-                                v.Position
-                            ),
-                            config.Settings.AimBotSpeed.Value / 10
-                        )
+                    
+                    if workspace.CurrentCamera then
+                        workspace.CurrentCamera.CFrame =
+                            workspace.CurrentCamera.CFrame:Lerp(
+                                CFrame.lookAt(
+                                    workspace.CurrentCamera.CFrame.Position,
+                                    v.Position
+                                ),
+                                config.Settings.AimBotSpeed.Value / 10
+                            )
+                    end
                 end
             end
         end
 
         --// MISCS
         if (config.Miscs.Control.Value) then
-            if (not config.Miscs.Control.Target.Value) then return end
-            local root = config.Miscs.Control.Target.Value.PrimaryPart
-            if (getLocalRoot()) then
-                getLocalRoot().CFrame = root.CFrame + Vector3.new(0, -10, 0)
+            local targetModel = config.Miscs.Control.Target.Value
+            if (not targetModel or not targetModel.PrimaryPart) then return end
+            
+            local root = targetModel.PrimaryPart
+            LocalRoot.CFrame = root.CFrame + Vector3.new(0, -10, 0)
+            
+            local hum = cget(root.Parent, "Humanoid")
+            if (hum and workspace.CurrentCamera) then
+                workspace.CurrentCamera.CameraSubject = hum
             end
-            if (cget(root.Parent, "Humanoid")) then
-                workspace.CurrentCamera.CameraSubject = cget(root.Parent, "Humanoid")
-            end
-            if (getLocalChar()) then
-                for _, v in ipairs(getLocalChar():GetDescendants()) do
-                    if (v:IsA("BasePart")) then
-                        v.CanCollide = false
-                    end
+            
+            for _, v in ipairs(LocalChar:GetDescendants()) do
+                if (v:IsA("BasePart")) then
+                    v.CanCollide = false
                 end
             end
         end
-        if (getLocalChar()) then
-            local ChatTyping = get(getLocalChar(), "ChatTyping")
-            if (ChatTyping) then
-                ChatTyping.Enabled = not config.Miscs.NoTyping.Value
-            end
+        local ChatTyping = get(LocalChar, "ChatTyping")
+        if (ChatTyping) then
+            ChatTyping.Enabled = not config.Miscs.NoTyping.Value
         end
         if (AntiKickDisablerTimer >= .5) then
             if (config.Miscs.AntiKickDisabler.Value) then
-                for _, v in ipairs(GetNearParts(getLocalRoot().Position, 16)) do
-                    if (v.Name == "FirePlayerPart" and not v:IsDescendantOf(getLocalChar())) then
+                for _, v in ipairs(GetNearParts(LocalRoot.Position, 16)) do
+                    if (v.Name == "FirePlayerPart" and not v:IsDescendantOf(LocalChar)) then
                         local p = service.Players:GetPlayerFromCharacter(v.Parent.Parent)
                         if (p) then
                             SetNetworkOwner(v)
@@ -2442,16 +2600,16 @@ do
             AntiKickDisablerTimer = 0
         end
         if (config.Miscs.NWOAura.Value) then
-            for _, v in ipairs(GetNearParts(getLocalRoot().Position, config.Settings.AuraRadius.Value)) do
-                if (not v.Anchored and not v:IsDescendantOf(getLocalChar())) then
+            for _, v in ipairs(GetNearParts(LocalRoot.Position, config.Settings.AuraRadius.Value)) do
+                if (not v.Anchored and not v:IsDescendantOf(LocalChar)) then
                     SetNetworkOwner(v)
                 end
             end
         end
 
         --// BLOBMAN
+        local blob = getBlobman()
         if (config.Blobman.Noclip.Value) then
-            local blob = getBlobman()
             if (blob) then
                 for _, v in ipairs(blob:GetDescendants()) do
                     if (v:IsA("BasePart")) then
@@ -2460,143 +2618,105 @@ do
                 end
             end
         end
-        if (config.Blobman.GrabAura.Value) then
-            local blob = getBlobman()
-            if (blob) then
-                for _, v in ipairs(GetNearParts(getLocalRoot().Position, config.Settings.AuraRadius.Value)) do
-                    if (not v.Anchored and not v:IsDescendantOf(getLocalChar()) and (v.Name == "HumanoidRootPart" or v.Name == "Torso")) then
-                        local p = service.Players:GetPlayerFromCharacter(v.Parent)
-                        if (IsFriend(p) and config.Settings.IgnoreFriend.Value) then continue end
-                        if (not p and config.Settings.OnlyPlayer.Value) then continue end
-                        blobGrab(blob, v, config.Blobman.ArmSide.Value)
-                    end
+        if (config.Blobman.GrabAura.Value and blob) then
+            for _, v in ipairs(GetNearParts(LocalRoot.Position, config.Settings.AuraRadius.Value)) do
+                if (not v.Anchored and not v:IsDescendantOf(LocalChar) and (v.Name == "HumanoidRootPart" or v.Name == "Torso")) then
+                    local p = service.Players:GetPlayerFromCharacter(v.Parent)
+                    if (p and p == LocalPlayer) then continue end
+                    if (IsFriend(p) and config.Settings.IgnoreFriend.Value) then continue end
+                    if (not p and config.Settings.OnlyPlayer.Value) then continue end
+                    blobGrab(blob, v, config.Blobman.ArmSide.Value)
                 end
             end
         end
-        if (config.Blobman.KickAura.Value) then
-            local blob = getBlobman()
-            if (blob) then
-                for _, v in ipairs(GetNearParts(getLocalRoot().Position, config.Settings.AuraRadius.Value)) do
-                    if (not v.Anchored and not v:IsDescendantOf(getLocalChar()) and (v.Name == "HumanoidRootPart" or v.Name == "Torso")) then
-                        local p = service.Players:GetPlayerFromCharacter(v.Parent)
-                        if (IsFriend(p) and config.Settings.IgnoreFriend.Value) then continue end
-                        if (not p and config.Settings.OnlyPlayer.Value) then continue end
-                        blobKick(blob, v, config.Blobman.ArmSide.Value)
-                    end
+        if (config.Blobman.KickAura.Value and blob) then
+            for _, v in ipairs(GetNearParts(LocalRoot.Position, config.Settings.AuraRadius.Value)) do
+                if (not v.Anchored and not v:IsDescendantOf(LocalChar) and (v.Name == "HumanoidRootPart" or v.Name == "Torso")) then
+                    local p = service.Players:GetPlayerFromCharacter(v.Parent)
+                    if (p and p == LocalPlayer) then continue end
+                    if (IsFriend(p) and config.Settings.IgnoreFriend.Value) then continue end
+                    if (not p and config.Settings.OnlyPlayer.Value) then continue end
+                    blobKick(blob, v, config.Blobman.ArmSide.Value)
                 end
             end
         end
-        if (config.Blobman.LoopKick.Value) then
+        if (config.Blobman.LoopKick.Value and blob) then
             local t = getPlayerFromName(config.Blobman.Target.Value)
             if (t) then
                 local root = get(t.Character, "HumanoidRootPart")
-                local b = getBlobman()
-                if (root and b) then
-                    blobKick(b, root, config.Blobman.ArmSide.Value)
+                if (root) then
+                    blobKick(blob, root, config.Blobman.ArmSide.Value)
                 end
             end
         end
-        if (config.Blobman.LoopKickAll.Value) then
-            local blob = getBlobman()
-            if (blob) then
-                for _, v in ipairs(service.Players:GetPlayers()) do
-                    if (v == getLocalPlayer()) then continue end
-                    if (not config.Settings.IgnoreIsInPlot.Value and IsInPlot(v)) then continue end
-                    if (config.Settings.IgnoreFriend.Value and IsFriend(v)) then continue end
-                    local character = v.Character
-                    if (not character) then continue end
-                    local root = get(character, "HumanoidRootPart")
-                    if (not root) then continue end
-                    blobKick(blob, root, config.Blobman.ArmSide.Value)
-                end
+        if (config.Blobman.LoopKickAll.Value and blob) then
+            for _, v in ipairs(service.Players:GetPlayers()) do
+                if (v == LocalPlayer) then continue end
+                if (not config.Settings.IgnoreIsInPlot.Value and IsInPlot(v)) then continue end
+                if (config.Settings.IgnoreFriend.Value and IsFriend(v)) then continue end
+                local character = v.Character
+                if (not character) then continue end
+                local root = get(character, "HumanoidRootPart")
+                if (not root) then continue end
+                blobKick(blob, root, config.Blobman.ArmSide.Value)
             end
         end
 
         --// SNIPES
         if (SnipeLoopTimer >= 1) then
-            if (config.Snipes.LoopVoid.Value) then
-                local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (t) then
-                    local root = get(t.Character, "HumanoidRootPart")
-                    if (root) then
-                        task.spawn(function()
-                            local pos = getLocalRoot().CFrame
-                            Snipefunc(root, function()
-                                Velocity(root, Vector3.new(0, 1e4, 0))
-                                getLocalRoot().CFrame = pos
-                            end)
+            local TargetName = config.Snipes.Target.Value
+            local t = getPlayerFromName(TargetName)
+            local root = t and get(t.Character, "HumanoidRootPart")
+            if (root) then
+                if (config.Snipes.LoopVoid.Value) then
+                    task.spawn(function()
+                        Snipefunc(root, function()
+                            Velocity(root, Vector3.new(0, 1e4, 0))
+                            LocalRoot.CFrame = LocalRoot.CFrame
                         end)
-                    end
+                    end)
                 end
-            end
-            if (config.Snipes.LoopKill.Value) then
-                local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (t) then
-                    local root = get(t.Character, "HumanoidRootPart")
-                    if (root) then
-                        task.spawn(function()
-                            local pos = getLocalRoot().CFrame
-                            Snipefunc(root, function()
-                                MoveTo(root, CFrame.new(4096, -75, 4096))
-                                Velocity(root, Vector3.new(0, -1e3, 0))
-                                getLocalRoot().CFrame = pos
-                            end)
+                if (config.Snipes.LoopKill.Value) then
+                    task.spawn(function()
+                        Snipefunc(root, function()
+                            MoveTo(root, CFrame.new(4096, -75, 4096))
+                            Velocity(root, Vector3.new(0, -1e3, 0))
+                            LocalRoot.CFrame = LocalRoot.CFrame
                         end)
-                    end
+                    end)
                 end
-            end
-            if (config.Snipes.LoopPoison.Value) then
-                local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (t) then
-                    local root = get(t.Character, "HumanoidRootPart")
-                    if (root) then
-                        task.spawn(function()
-                            local pos = getLocalRoot().CFrame
-                            Snipefunc(root, function()
-                                MoveTo(root, CFrame.new(58, -70, 271))
-                                getLocalRoot().CFrame = pos
-                            end)
+                if (config.Snipes.LoopPoison.Value) then
+                    task.spawn(function()
+                        Snipefunc(root, function()
+                            MoveTo(root, CFrame.new(58, -70, 271))
+                            LocalRoot.CFrame = LocalRoot.CFrame
                         end)
-                    end
+                    end)
                 end
-            end
-            if (config.Snipes.LoopRagdoll.Value) then
-                local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (t) then
-                    local root = get(t.Character, "HumanoidRootPart")
-                    if (root) then
-                        task.spawn(function()
-                            local pos = getLocalRoot().CFrame
-                            Snipefunc(root, function()
-                                local rpos = root.CFrame
-                                Velocity(root, Vector3.new(0, -64, 0))
-                                task.wait(.1)
-                                getLocalRoot().CFrame = rpos
-                                Velocity(root, Vector3.zero)
-                                getLocalRoot().CFrame = pos
-                            end)
+                if (config.Snipes.LoopRagdoll.Value) then
+                    task.spawn(function()
+                        Snipefunc(root, function()
+                            local rpos = root.CFrame
+                            Velocity(root, Vector3.new(0, -64, 0))
+                            task.wait(.1)
+                            LocalRoot.CFrame = rpos
+                            Velocity(root, Vector3.zero)
+                            LocalRoot.CFrame = LocalRoot.CFrame
                         end)
-                    end
+                    end)
                 end
-            end
-            if (config.Snipes.LoopDeath.Value) then
-                local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (t) then
-                    local root = get(t.Character, "HumanoidRootPart")
-                    if (root) then
-                        task.spawn(function()
-                            local pos = getLocalRoot().CFrame
-                            Snipefunc(root, function()
-                                local hum = cget(root.Parent, "Humanoid")
-                                if (hum) then
-                                    hum:ChangeState(Enum.HumanoidStateType.Dead)
-                                end
-                                task.wait(.5)
-                                ungrab(root)
-                                getLocalRoot().CFrame = pos
-                            end)
+                if (config.Snipes.LoopDeath.Value) then
+                    task.spawn(function()
+                        Snipefunc(root, function()
+                            local hum = cget(root.Parent, "Humanoid")
+                            if (hum) then
+                                hum:ChangeState(Enum.HumanoidStateType.Dead)
+                            end
+                            task.wait(.5)
+                            ungrab(root)
+                            LocalRoot.CFrame = LocalRoot.CFrame
                         end)
-                    end
+                    end)
                 end
             end
             SnipeLoopTimer = 0
@@ -2604,18 +2724,17 @@ do
 
         --// TROLLS
         if (LoudAllTimer >= .1) then
-            if (config.Trolls.LoudAll.Value) then
-                if (config.Trolls.LoudAll.SoundPart.Value) then
-                    for _, v in ipairs(service.Players:GetPlayers()) do
-                        if (v == getLocalPlayer()) then continue end
-                        if (not config.Settings.IgnoreIsInPlot.Value and IsInPlot(v)) then continue end
-                        if (config.Settings.IgnoreFriend.Value and IsFriend(v)) then continue end
-                        local character = v.Character
-                        if (not character) then continue end
-                        local root = get(character, "HumanoidRootPart")
-                        if (not root) then continue end
-                        config.Trolls.LoudAll.SoundPart.Value.SoundPart.CFrame = root.CFrame
-                    end
+            if (config.Trolls.LoudAll.Value and config.Trolls.LoudAll.SoundPart.Value) then
+                local soundPart = config.Trolls.LoudAll.SoundPart.Value.SoundPart
+                for _, v in ipairs(service.Players:GetPlayers()) do
+                    if (v == LocalPlayer) then continue end
+                    if (not config.Settings.IgnoreIsInPlot.Value and IsInPlot(v)) then continue end
+                    if (config.Settings.IgnoreFriend.Value and IsFriend(v)) then continue end
+                    local character = v.Character
+                    if (not character) then continue end
+                    local root = get(character, "HumanoidRootPart")
+                    if (not root) then continue end
+                    soundPart.CFrame = root.CFrame
                 end
             end
             LoudAllTimer = 0
@@ -2630,9 +2749,7 @@ do
             if (config.Trolls.ServerDestroyer.Value) then
                 for _ = 1, 32 do
                     createLine(nil)
-                    if (getLocalRoot()) then
-                        getLocalRoot().CFrame = config.Trolls.ServerDestroyer.CFrame
-                    end
+                    LocalRoot.CFrame = config.Trolls.ServerDestroyer.CFrame
                 end
             end
             ServerDestroyerTimer = 0
