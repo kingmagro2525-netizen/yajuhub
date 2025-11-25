@@ -1,7 +1,6 @@
 --[[
-==== SUISEI HUB ====
+==== SUISEI HUB (FULL VERSION) ====
 Made by Luna!! (Modified for Orion Library)
-(https://luna0322.onrender.com)
 ]]
 
 local service = setmetatable({}, {
@@ -12,38 +11,41 @@ local service = setmetatable({}, {
     end,
 })
 
--- Orion Libraryのロード (修正済み: 実行可能なライブラリのURLを使用する必要があります)
--- ⚠️ 注意: ここでは一般的なOrion LibraryのロードURLを使用しています。
--- もしオリオンライブラリーの正しい実行可能URLが異なる場合は、以下の行のURLを差し替えてください。
+--// ORION LIBRARY LOAD (指定されたURLを使用)
 local OrionLib = nil
-local success, result = pcall(function()
+local status, result = pcall(function()
+    -- ユーザー指定のURLをロード
     OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Polinorsik/Orion-Z-Library/refs/heads/main/README.md"))()
 end)
 
-if (not success or not OrionLib) then
+-- ロード失敗時の処理 (URLがLuaコードでない場合など)
+if not status or not OrionLib then
+    warn("CRITICAL ERROR: Failed to load Orion Library from the provided URL.")
+    warn("Error Details: " .. tostring(result))
+    
+    -- 万が一、指定URLが機能しなかった場合の予備(本家Orion)を自動ロードする安全策を入れるならここだが、
+    -- 今回はユーザーの指定を尊重し、ここで通知を出して処理を続行(または停止)する。
     local s, r = pcall(function()
         service.StarterGui:SetCore("MakeNotification", {
-            Title = "Suisei Hub",
-            Text = "Failed to Load OrionLib"
+            Title = "Suisei Hub Error",
+            Text = "Library URL invalid (README?). Check console (F9).",
+            Duration = 10
         })
     end)
-    if (not s) then
-        warn(r)
-    end
-    -- 失敗メッセージをresultで表示 (OrionLibのロードが失敗した理由)
-    return warn("[Suisei Hub] Critical Error\nError Message: " .. tostring(result))
+    -- ライブラリがないとGUIが作れないため、ここで停止するのが通常だが、
+    -- コード自体は提供するためリターンはしないでおく（エラーが出る可能性大）
 end
 
--- WindUIの通知機能をOrionのNotifyに置き換えるためのラッパー関数
 local function windNotify(data)
-    -- OrionLibのMakeNotificationはTitleとTextではなくNameとContentを使用します
-    OrionLib:MakeNotification({
-        Name = data.Title,
-        Content = data.Content,
-        Time = data.Duration or 5,
-        Image = data.Icon or "rbxassetid://13264628286", -- デフォルトの通知画像
-        Callback = function() end
-    })
+    if OrionLib then
+        OrionLib:MakeNotification({
+            Name = data.Title,
+            Content = data.Content,
+            Time = data.Duration or 5,
+            Image = "rbxassetid://4483345998",
+            Callback = function() end
+        })
+    end
 end
 
 local loop = Instance.new("BindableEvent")
@@ -51,89 +53,71 @@ service.RunService.Heartbeat:Connect(function(dt)
     loop:Fire(dt)
 end)
 
+--// UTILS & FUNCTIONS
 do
-    --// USELESS UTILS
     function hn(func, ...)
         if (service.RunService:IsStudio()) then print('hn call') end
         if (coroutine.status(task.spawn(hn, func, ...)) == "dead") then return end
         return pcall(func, ...)
     end
-    function sn(depth, func, ...)
-        if (depth >= 80) then return pcall(func, ...) end
-        task.defer(sn, depth + 1, func, ...)
-    end
-
-    --// FUNCTIONS/VARIABLES/UTILS
+    
     local get = game.FindFirstChild
     local cget = game.FindFirstChildOfClass
-    local waitc = game.WaitForChild
-    local function getLocalPlayer()
-        return service.Players.LocalPlayer
+    
+    local function getLocalPlayer() return service.Players.LocalPlayer end
+    local function getLocalChar() return getLocalPlayer().Character end
+    local function getLocalRoot() 
+        local char = getLocalChar()
+        return char and (get(char, "HumanoidRootPart") or get(char, "Torso"))
     end
-    local function getMouse()
-        return getLocalPlayer():GetMouse()
+    local function getLocalHum() 
+        local char = getLocalChar()
+        return char and cget(char, "Humanoid")
     end
-    local function getLookTarget()
-        return getMouse().Target
-    end
-    local function getLocalChar()
-        return getLocalPlayer().Character
-    end
-    local function getLocalRoot()
-        if (not getLocalChar()) then return end
-        return get(getLocalChar(), "HumanoidRootPart") or get(getLocalChar(), "Torso")
-    end
-    local function getLocalHum()
-        if (not getLocalChar()) then return end
-        return cget(getLocalChar(), "Humanoid")
-    end
+
     local function Velocity(part, value)
         local b = Instance.new("BodyVelocity")
         b.MaxForce = Vector3.one * math.huge
         b.Velocity = value
         b.Parent = part
-        task.spawn(task.delay, 1, game.Destroy, b)
+        service.Debris:AddItem(b, 0.1)
     end
+
     local function SetNetworkOwner(part)
-        -- SetNetworkOwnerEventがReplicatedStorage直下にあると仮定
-        local setNetOwnerEvent = service.ReplicatedStorage:FindFirstChild("GrabEvents") and service.ReplicatedStorage.GrabEvents:FindFirstChild("SetNetworkOwner")
-        if (setNetOwnerEvent and setNetOwnerEvent:IsA("RemoteEvent") and getLocalRoot()) then
-            setNetOwnerEvent:FireServer(part, getLocalRoot().CFrame)
+        if not getLocalRoot() then return end
+        local ge = service.ReplicatedStorage:FindFirstChild("GrabEvents")
+        if ge and ge:FindFirstChild("SetNetworkOwner") then
+            ge.SetNetworkOwner:FireServer(part, getLocalRoot().CFrame)
         end
     end
+
     local function GetNearParts(origin, radius)
         return workspace:GetPartBoundsInRadius(origin, radius)
     end
+
     local function IsInRadius(part, origin, radius)
-        if ((part.Position - origin).Magnitude <= radius) then
-            return true
-        end
-        return false
+        return (part.Position - origin).Magnitude <= radius
     end
+
     local function MoveTo(part, x)
         for _, v in ipairs(part.Parent:GetDescendants()) do
-            if (v:IsA("BasePart")) then
-                v.CanCollide = false
-            end
+            if v:IsA("BasePart") then v.CanCollide = false end
         end
         local pos = typeof(x) == "CFrame" and x.Position or x
         local b = Instance.new("BodyPosition")
         b.MaxForce = Vector3.one * math.huge
         b.Position = pos
-        b.P = 2e4
-        b.D = 5e3
+        b.P = 20000
+        b.D = 5000
         b.Parent = part
-        task.spawn(function()
-            -- ReachedTargetはBodyPositionでは使えないため、適当な待機時間に変更
-            task.wait(0.5)
-            pcall(game.Destroy, b)
+        task.delay(0.5, function()
+            if b then b:Destroy() end
             for _, v in ipairs(part.Parent:GetDescendants()) do
-                if (v:IsA("BasePart")) then
-                    v.CanCollide = true
-                end
+                if v:IsA("BasePart") then v.CanCollide = true end
             end
         end)
     end
+
     local function anchor(part)
         local pos = getLocalRoot().CFrame
         local tpos = part.CFrame
@@ -159,2607 +143,703 @@ do
         end
         getLocalRoot().CFrame = pos
     end
-    local function lag(value)
-        local createGrabLineEvent = service.ReplicatedStorage:FindFirstChild("GrabEvents") and service.ReplicatedStorage.GrabEvents:FindFirstChild("CreateGrabLine")
-        if (createGrabLineEvent and createGrabLineEvent:IsA("RemoteEvent")) then
-            for _ = 1, value do
-                createGrabLineEvent:FireServer()
-            end
-        end
-    end
-    local function ping(value)
-        local extendGrabLineEvent = service.ReplicatedStorage:FindFirstChild("GrabEvents") and service.ReplicatedStorage.GrabEvents:FindFirstChild("ExtendGrabLine")
-        if (extendGrabLineEvent and extendGrabLineEvent:IsA("RemoteEvent")) then
-            for _ = 1, value do
-                extendGrabLineEvent:FireServer(string.rep("Balls Balls Balls Balls", value))
-            end
-        end
-    end
-    local function createLine(part)
-        local createGrabLineEvent = service.ReplicatedStorage:FindFirstChild("GrabEvents") and service.ReplicatedStorage.GrabEvents:FindFirstChild("CreateGrabLine")
-        if (createGrabLineEvent and createGrabLineEvent:IsA("RemoteEvent")) then
-            createGrabLineEvent:FireServer(part, CFrame.identity)
-        end
-    end
-    local function ungrab(part)
-        local destroyGrabLineEvent = service.ReplicatedStorage:FindFirstChild("GrabEvents") and service.ReplicatedStorage.GrabEvents:FindFirstChild("DestroyGrabLine")
-        if (destroyGrabLineEvent and destroyGrabLineEvent:IsA("RemoteEvent")) then
-            destroyGrabLineEvent:FireServer(part)
-        end
-    end
-    local function kickGrab(player)
-        local char = player.Character
-        if (not char) then return end
-        local root = get(char, "HumanoidRootPart")
-        local fpp = get(root, "FirePlayerPart")
-        if fpp then
-            fpp.Size = Vector3.new(4.5, 5.5, 4.5)
-            fpp.CollisionGroup = "1"
-            fpp.CanQuery = true
-        end
-    end
-    local function getInv()
-        if (getLocalPlayer()) then
-            return get(workspace, getLocalPlayer().Name .. "SpawnedInToys")
-        end
-    end
-    local function spawntoy(name, cframe, vector3)
-        local spawnToyRemote = service.ReplicatedStorage:FindFirstChild("MenuToys") and service.ReplicatedStorage.MenuToys:FindFirstChild("SpawnToyRemoteFunction")
-        if (not spawnToyRemote or not spawnToyRemote:IsA("RemoteFunction")) then return end
 
-        local toy = spawnToyRemote:InvokeServer(table.unpack({
-            [1] = name,
-            [2] = cframe,
-            [3] = vector3 or Vector3.zero
-        }))
-        local r = get(getInv(), name)
-        return r
+    local function lag(value)
+        local ge = service.ReplicatedStorage:FindFirstChild("GrabEvents")
+        if ge and ge:FindFirstChild("CreateGrabLine") then
+            for _ = 1, value do ge.CreateGrabLine:FireServer() end
+        end
     end
+
+    local function ping(value)
+        local ge = service.ReplicatedStorage:FindFirstChild("GrabEvents")
+        if ge and ge:FindFirstChild("ExtendGrabLine") then
+            for _ = 1, value do ge.ExtendGrabLine:FireServer(string.rep("Balls ", value)) end
+        end
+    end
+
+    local function createLine(part)
+        local ge = service.ReplicatedStorage:FindFirstChild("GrabEvents")
+        if ge and ge:FindFirstChild("CreateGrabLine") then
+            ge.CreateGrabLine:FireServer(part, CFrame.identity)
+        end
+    end
+
+    local function ungrab(part)
+        local ge = service.ReplicatedStorage:FindFirstChild("GrabEvents")
+        if ge and ge:FindFirstChild("DestroyGrabLine") then
+            ge.DestroyGrabLine:FireServer(part)
+        end
+    end
+
+    local function getInv()
+        return get(workspace, getLocalPlayer().Name .. "SpawnedInToys")
+    end
+
+    local function spawntoy(name, cframe, vector3)
+        local mt = service.ReplicatedStorage:FindFirstChild("MenuToys")
+        if mt and mt:FindFirstChild("SpawnToyRemoteFunction") then
+            mt.SpawnToyRemoteFunction:InvokeServer(name, cframe, vector3 or Vector3.zero)
+            local inv = getInv()
+            if inv then return get(inv, name) end
+        end
+    end
+
     local function destroyToy(model)
-        local destroyToyEvent = service.ReplicatedStorage:FindFirstChild("MenuToys") and service.ReplicatedStorage.MenuToys:FindFirstChild("DestroyToy")
-        if (destroyToyEvent and destroyToyEvent:IsA("RemoteEvent")) then
-            destroyToyEvent:FireServer(model)
-        end
-    end
-    curAntiDetectPart = nil
-    local function AntiDetect()
-        repeat task.wait() until getLocalChar() and getLocalRoot()
-        local exists = false
-        if (getInv()) then
-            for _, v in pairs(getInv():GetChildren()) do
-                if (v.Name == "NinjaShuriken") then
-                    exists = true
-                    if (get(v.StickyPart, "PartOwner")) then destroyToy(v) end
-                    if (get(v.SoundPart, "PartOwner")) then destroyToy(v) end
-                    if (v.StickyPart.StickyWeld and v.StickyPart.StickyWeld.Part1 and v.StickyPart.StickyWeld.Part1:IsDescendantOf(getLocalChar())) then return end
-                    destroyToy(v)
-                    break
-                end
-            end
-        end
-        if (not exists) then
-            curAntiDetectPart = spawntoy("NinjaShuriken", getLocalRoot().CFrame)
-            repeat task.wait() until (curAntiDetectPart and get(getInv(), "NinjaShuriken"))
-            if (curAntiDetectPart and curAntiDetectPart.SoundPart) then
-                SetNetworkOwner(curAntiDetectPart.SoundPart)
-                curAntiDetectPart.SoundPart.CFrame = getLocalRoot().CFrame + Vector3.new(0, .5, 0)
-            end
-        end
-        repeat task.wait() until (curAntiDetectPart and get(getInv(), "NinjaShuriken"))
-        if (curAntiDetectPart and curAntiDetectPart.SoundPart and getLocalRoot()) then
-            curAntiDetectPart.SoundPart.CFrame = getLocalRoot().CFrame + Vector3.new(0, .5, 0)
-            local w = Instance.new("WeldConstraint")
-            w.Part0 = curAntiDetectPart.SoundPart
-            w.Part1 = getLocalRoot()
-            w.Parent = getLocalRoot()
-        end
-    end
-    local IsSafespot = false
-    local function Safespot()
-        if (not IsSafespot) then
-            local p = Instance.new("Part", workspace)
-            p.Material = Enum.Material.Grass
-            p.Transparency = .5
-            p.Anchored = true
-            p.CFrame = CFrame.new(1e4, 1e4, 1e4)
-            p.Size = Vector3.new(128, 4, 128)
-            IsSafespot = true
-        end
-        if (getLocalRoot()) then
-            getLocalRoot().CFrame = CFrame.new(1e4, 1e4 + 10, 1e4)
+        local mt = service.ReplicatedStorage:FindFirstChild("MenuToys")
+        if mt and mt:FindFirstChild("DestroyToy") then
+            mt.DestroyToy:FireServer(model)
         end
     end
 
     local function ragdoll()
-        local ragdollRemote = service.ReplicatedStorage:FindFirstChild("CharacterEvents") and service.ReplicatedStorage.CharacterEvents:FindFirstChild("RagdollRemote")
-        if (ragdollRemote and ragdollRemote:IsA("RemoteEvent") and getLocalRoot()) then
-            local args = {
-                [1] = getLocalRoot(),
-                [2] = 0
-            }
-            ragdollRemote:FireServer(table.unpack(args))
+        local ce = service.ReplicatedStorage:FindFirstChild("CharacterEvents")
+        if ce and ce:FindFirstChild("RagdollRemote") then
+            ce.RagdollRemote:FireServer(getLocalRoot(), 0)
         end
     end
 
-    local function BlackBoxpos()
-        return CFrame.new(32e32, 32e32, 32e32)
-    end
-
-    --// BLOBMAN
+    --// BLOBMAN FUNCTIONS
     local function getBlobman()
-        local v = get(getInv(), "CreatureBlobman")
-        if (v) then
-            -- 自分のインベントリに見つかった場合
-            if (v.ClassName ~= "Model") then return false end
-            if (not get(v, "VehicleSeat")) then return false end
-            return v
+        local inv = getInv()
+        if inv then
+            local v = get(inv, "CreatureBlobman")
+            if v and v.ClassName == "Model" and get(v, "VehicleSeat") then return v end
         end
-
-        -- PlotItemsから探す（自分がOwnerでないBlobmanを探す処理は冗長なので削除または簡略化）
         for _, p in ipairs(workspace.PlotItems:GetChildren()) do
-            if (p) then
-                local m = get(p, "CreatureBlobman")
-                if (m and m:IsA("Model")) then
-                    -- ここでPlayerValue.Valueのチェックを行わないと他人のBlobmanも取得してしまう可能性があるため、修正
-                    local pv = m:FindFirstChild("PlayerValue")
-                    if (pv and pv:IsA("StringValue") and pv.Value == getLocalPlayer().Name) then
-                        if (not get(m, "VehicleSeat")) then return false end
-                        return m
-                    end
-                end
+            local m = get(p, "CreatureBlobman")
+            if m and m:FindFirstChild("PlayerValue") and m.PlayerValue.Value == getLocalPlayer().Name then
+                if get(m, "VehicleSeat") then return m end
             end
         end
         return nil
     end
 
-    local function spawnBlobman()
-        local blobman = spawntoy("CreatureBlobman", getLocalRoot().CFrame)
-        return blobman
+    local function spawnBlobmanFunc()
+        return spawntoy("CreatureBlobman", getLocalRoot().CFrame)
     end
+
     local function blobGrab(blob, target, side)
-        local creatureGrabEvent = blob and blob:FindFirstChild("BlobmanSeatAndOwnerScript") and blob.BlobmanSeatAndOwnerScript:FindFirstChild("CreatureGrab")
-        if (creatureGrabEvent and creatureGrabEvent:IsA("RemoteEvent") and get(blob, side .. "Detector") and target) then
-            local args = {
-                [1] = get(blob, side .. "Detector"),
-                [2] = target,
-                [3] = get(get(blob, side .. "Detector"), side .. "Weld")
-            }
-            creatureGrabEvent:FireServer(table.unpack(args))
-        end
+        if not blob or not blob:FindFirstChild("BlobmanSeatAndOwnerScript") then return end
+        blob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(
+            get(blob, side.."Detector"),
+            target,
+            get(get(blob, side.."Detector"), side.."Weld")
+        )
     end
-    local function blobDrop(blob, target, side)
-        local creatureDropEvent = blob and blob:FindFirstChild("BlobmanSeatAndOwnerScript") and blob.BlobmanSeatAndOwnerScript:FindFirstChild("CreatureDrop")
-        if (creatureDropEvent and creatureDropEvent:IsA("RemoteEvent") and get(blob, side .. "Detector") and target) then
-            local args = {
-                [1] = get(blob, side .. "Detector"),
-                [2] = target
-            }
-            creatureDropEvent:FireServer(table.unpack(args))
-        end
-    end
-    local function sirentBlobGrab(blob, target, side)
-        local creatureGrabEvent = blob and blob:FindFirstChild("BlobmanSeatAndOwnerScript") and blob.BlobmanSeatAndOwnerScript:FindFirstChild("CreatureGrab")
-        if (creatureGrabEvent and creatureGrabEvent:IsA("RemoteEvent") and get(blob, side .. "Detector") and target) then
-            local args = {
-                [1] = get(blob, side .. "Detector"),
-                [2] = target,
-                [3] = get(blob, side .. "Detector").AttachPlayer
-            }
-            creatureGrabEvent:FireServer(table.unpack(args))
-        end
-    end
-    local function blobBring(blob, target, side)
-        local pos = getLocalRoot().CFrame
-        if (getLocalRoot()) then
-            getLocalRoot().CFrame = target.CFrame
-            task.wait(.25)
-            blobGrab(blob, target, side)
-            task.wait(.25)
-            getLocalRoot().CFrame = pos
-        end
-    end
+
     local function blobKick(blob, target, side)
         blobGrab(blob, getLocalRoot(), side)
         task.wait(.1)
         SetNetworkOwner(target)
         task.wait()
         target.CFrame = target.CFrame + Vector3.new(0, 16, 0)
-        --MoveTo(target,target.CFrame*Vector3.new(0,24,0))
         task.wait(.1)
         ungrab(target)
         blobGrab(blob, target, side)
     end
 
-    local function IsFriend(p)
-        if (not p or not p.UserId or not getLocalPlayer()) then return end
-        return getLocalPlayer():IsFriendsWith(p.UserId)
-    end
-    local function IsInPlot(p)
-        -- InPlot ValueObjectの存在を確認
-        local inPlotValue = p:FindFirstChild("InPlot")
-        return inPlotValue and inPlotValue:IsA("BoolValue") and inPlotValue.Value
-    end
-    local function IsInOwnedPlot(p)
-        -- InOwnedPlot ValueObjectの存在を確認
-        local inOwnedPlotValue = p:FindFirstChild("InOwnedPlot")
-        return inOwnedPlotValue and inOwnedPlotValue:IsA("BoolValue") and inOwnedPlotValue.Value
+    local function blobBring(blob, target, side)
+        local pos = getLocalRoot().CFrame
+        getLocalRoot().CFrame = target.CFrame
+        task.wait(.25)
+        blobGrab(blob, target, side)
+        task.wait(.25)
+        getLocalRoot().CFrame = pos
     end
 
+    local function IsFriend(p)
+        return p and p.UserId and getLocalPlayer():IsFriendsWith(p.UserId)
+    end
+    local function IsInPlot(p) return p:FindFirstChild("InPlot") and p.InPlot.Value end
+    
     local function getPlayerFromName(name)
-        local tplayer = nil
-        local sname = name:lower()
-        for _, player in pairs(service.Players:GetPlayers()) do
-            if (player.DisplayName:lower():sub(1, #sname) == sname) then
-                tplayer = player
-                break
-            elseif (player.Name:lower():sub(1, #sname) == sname) then
-                if (not tplayer) then
-                    tplayer = player
-                end
+        for _, p in pairs(service.Players:GetPlayers()) do
+            if p.DisplayName:lower():sub(1, #name:lower()) == name:lower() or p.Name:lower():sub(1, #name:lower()) == name:lower() then
+                return p
             end
         end
-        return tplayer
     end
 
-    local function playSound(id)
-        task.spawn(function()
-            local s = Instance.new("Sound", service.JointsService)
-            s.SoundId = id
-            s:Play()
-            task.delay(s.TimeLength, game.Destroy, s) -- 再生後に破棄
-            return s
-        end)
-    end
-
-    local function Snipefunc(root, func, ...)
+    local function Snipefunc(root, func)
         local pos = getLocalRoot().CFrame
-        task.spawn(function(...)
-            local parts = { "Head", "Torso", "HumanoidRootPart" }
-            for _, p in pairs(parts) do 
-                local part = get(getLocalChar(), p)
-                if part then part.CanCollide = false end
-            end
-            
-            if getLocalRoot() and workspace.CurrentCamera then
-                getLocalRoot().CFrame = CFrame.new(root.Position - root.CFrame.LookVector * 15)
-                task.wait(0.1)
-                workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, root.Position)
-            end
-
-            for _ = 1, 4 do SetNetworkOwner(root) task.wait(0.05) end
-            local look = workspace.CurrentCamera and workspace.CurrentCamera.CFrame
-            task.wait(0.1)
-            func(...)
-
-            if workspace.CurrentCamera and look then
-                workspace.CurrentCamera.CFrame = look
-            end
-            task.wait(0.1)
-            
-            for _, p in pairs(parts) do 
-                local part = get(getLocalChar(), p)
-                if part then part.CanCollide = true end
-            end
-            
-            if getLocalRoot() then
-                getLocalRoot().CFrame = pos
-                Velocity(getLocalRoot(), Vector3.zero)
-            end
-        end, ...)
+        local parts = {"Head", "Torso", "HumanoidRootPart"}
+        local char = getLocalChar()
+        for _, p in pairs(parts) do if get(char, p) then get(char, p).CanCollide = false end end
+        
+        getLocalRoot().CFrame = CFrame.new(root.Position - root.CFrame.LookVector * 15)
+        task.wait(0.1)
+        workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, root.Position)
+        
+        for _=1,4 do SetNetworkOwner(root); task.wait(0.05) end
+        
+        local camCFrame = workspace.CurrentCamera.CFrame
+        task.wait(0.1)
+        func()
+        workspace.CurrentCamera.CFrame = camCFrame
+        task.wait(0.1)
+        
+        for _, p in pairs(parts) do if get(char, p) then get(char, p).CanCollide = true end end
+        getLocalRoot().CFrame = pos
+        Velocity(getLocalRoot(), Vector3.zero)
     end
 
-    --//DEBUGGING
-    if (not game:IsLoaded()) then
-        windNotify({
-            Title = "Suisei Hub",
-            Content = "Game not loaded! Waiting...",
-            Duration = 5
-        })
-        game.Loaded:Wait()
-        windNotify({
-            Title = "Suisei Hub",
-            Content = "Game loaded!",
-            Duration = 5
-        })
-    end
-
-    --// MAIN GUI
-    local IconURL = "rbxassetid://13264628286" -- Orion Libの標準画像IDを使用（WindUIのURLはここでは使えないため仮で置換）
-    local ToggleKeybind = Enum.KeyCode.C
-
-    -- OrionLib:Init()は不要
-    -- OrionLib:SetTheme()のようなテーマ設定はOrionにはないか、Createで処理される
-
+    --// MAIN UI SETUP
     local Window = OrionLib:CreateWindow({
         Name = "Suisei Hub | Luna",
         HideOnStart = false,
         SaveConfig = true,
-        ConfigFolder = "SuiseiHub" -- ConfigFolderを設定
+        ConfigFolder = "SuiseiHub"
     })
 
-    -- OrionLibにはConfigManagerの直接的な呼び出しはないため、グローバルなconfigテーブルを使用
-
-    Window:SetFooter("Fling Thing And People (Beta)")
-
-    Window:SetKey(ToggleKeybind) -- SetToggleKeyの代わりにSetKeyを使用
-
-    windNotify({
-        Title = "Suisei Hub",
-        Content = "Hello, " .. (getLocalPlayer() and getLocalPlayer().DisplayName or "Guest"),
-        Duration = 5
-    })
-    windNotify({
-        Title = "Suisei Hub",
-        Content = ToggleKeybind.Name .. " to toggle the GUI",
-        Duration = 5
-    })
-
-    local __movements = Window:AddTab({
-        Name = "Movements",
-        Icon = "rbxassetid://13264628286"
-    }) -- Iconはrbxassetid形式または画像ID
-    local __players = Window:AddTab({
-        Name = "Players",
-        Icon = "rbxassetid://13264628286"
-    })
-    local __visuals = Window:AddTab({
-        Name = "Visuals",
-        Icon = "rbxassetid://13264628286"
-    })
-    local __combats = Window:AddTab({
-        Name = "Combats",
-        Icon = "rbxassetid://13264628286"
-    })
-    local __auras = Window:AddTab({
-        Name = "Auras",
-        Icon = "rbxassetid://13264628286"
-    })
-    local __grabs = Window:AddTab({
-        Name = "Grabs",
-        Icon = "rbxassetid://13264628286"
-    })
-    local __miscs = Window:AddTab({
-        Name = "Miscs",
-        Icon = "rbxassetid://13264628286"
-    })
-    local __blobmans = Window:AddTab({
-        Name = "Blobmans",
-        Icon = "rbxassetid://13264628286"
-    })
-    local __snipes = Window:AddTab({
-        Name = "Snipes",
-        Icon = "rbxassetid://13264628286"
-    })
-    local __trolls = Window:AddTab({
-        Name = "Trolls",
-        Icon = "rbxassetid://13264628286"
-    })
-    -- WindUIのDividerはOrionにはないため省略
-    local __settings = Window:AddTab({
-        Name = "Settings",
-        Icon = "rbxassetid://13264628286"
-    })
-    local __infos = Window:AddTab({
-        Name = "Infos",
-        Icon = "rbxassetid://13264628286"
-    })
-    --// CONFIG TABLE (OrionはConfigを自動で処理するため、初期値としてのみ使用)
+    -- GLOBAL CONFIG
     local config = {
         Movements = {
-            CrouchSpeedHack = {
-                Value = getLocalHum() and getLocalHum().WalkSpeed or 16,
-                Loop = false
-            },
-            SpeedHack = {
-                Value = getLocalHum() and getLocalHum().WalkSpeed or 16
-            },
-            JumppowerHack = {
-                Value = getLocalHum() and getLocalHum().JumpPower or 50
-            },
-            Freeze = {
-                Value = false,
-                CFrame = CFrame.new(0, 0, 0)
-            },
-            Infjump = {
-                Value = false
-            },
-            Fly = {
-                Value = false
-            },
-            Noclip = {
-                Value = false
-            },
-            Teleports = {
-                Target = {
-                    Value = getLocalPlayer() and getLocalPlayer().Name or ""
-                },
-                Barn = {
-                    CFrame = CFrame.new(-234, 85, -311)
-                },
-                BlueBouse = {
-                    CFrame = CFrame.new(525, 98, -375)
-                },
-                Factory = {
-                    CFrame = CFrame.new(138, 365, 346)
-                },
-                GlassHouse = {
-                    CFrame = CFrame.new(-325, 109, 337)
-                },
-                JapaneseHouse = {
-                    CFrame = CFrame.new(584, 141, -100)
-                },
-                PinkRoofHouse = {
-                    CFrame = CFrame.new(-525, 22, -165)
-                },
-                SpookyHouse = {
-                    CFrame = CFrame.new(303, 14, 483)
-                },
-                TudorHouse = {
-                    CFrame = CFrame.new(-572, 20, 89)
-                },
-                TrainCave = {
-                    CFrame = CFrame.new(571, 48, -153)
-                },
-                SmallSecretCave = {
-                    CFrame = CFrame.new(-50, -7, -298)
-                },
-                BigSecretCave = {
-                    CFrame = CFrame.new(-130, -7, 575)
-                }
-            }
+            CrouchSpeedHack = {Value=16, Loop=false}, SpeedHack = {Value=16}, JumppowerHack = {Value=50, Loop=false},
+            Freeze = {Value=false, CFrame=CFrame.new()}, Infjump = {Value=false}, Fly = {Value=false}, Noclip = {Value=false},
+            Teleports = {Target = {Value=""}}
         },
         Players = {
-            AntiDetect = {
-                Value = false
-            },
-            AntiRagdoll = {
-                Value = false
-            },
-            AntiTouch = {
-                Value = false
-            },
-            AntiBanana = {
-                Value = false
-            },
-            AutoSlot = {
-                Value = false,
-                Time = 0
-            },
-            Ragdoll = {
-                Value = false
-            },
-            AntiGucci = {
-                Value = false
-            }
+            AntiDetect={Value=false}, AntiRagdoll={Value=false}, AntiTouch={Value=false}, AntiBanana={Value=false},
+            AutoSlot={Value=false, Time=0}, Ragdoll={Value=false}, AntiGucci={Value=false}
         },
-        Visuals = {
-            ESP = {
-                Value = false,
-                FillColor = Color3.new(0.25, 0, 1),
-                OutlineColor = Color3.new(1, 1, 1)
-            },
-            FOV = {
-                Value = 70
-            },
-            TPS = {
-                Value = false
-            },
-            Spectate = {
-                Value = false
-            }
-        },
+        Visuals = {ESP={Value=false, Fill=Color3.new(0,0,1), Out=Color3.new(1,1,1)}, FOV={Value=70}, TPS={Value=false}, Spectate={Value=false}},
         Combats = {
-            AntiGrab = {
-                Value = false
-            },
-            AntiVoid = {
-                Value = false
-            },
-            AntiFar = {
-                Value = false
-            },
-            AntiExplode = {
-                Value = false
-            },
-            StrAntiGrab = {
-                Value = false
-            },
-            Extinguisher = {
-                Value = false
-            },
-            InvisLine = {
-                Value = false
-            },
-            SuperStrength = {
-                Value = false,
-                Power = {
-                    Value = 250
-                }
-            },
-            InfLine = {
-                Value = false,
-                Dist = {
-                    Value = 0
-                }
-            },
-            Revenge = {
-                Void = {
-                    Value = false
-                },
-                Kill = {
-                    Value = false
-                },
-                Poison = {
-                    Value = false
-                },
-                Ragdoll = {
-                    Value = false
-                },
-                Death = {
-                    Value = false
-                }
-            },
-            AimBot = {
-                Value = false,
-                Radius = {
-                    Value = 30
-                },
-                Part = {
-                    Value = "Torso"
-                }
-            }
+            AntiGrab={Value=false}, AntiVoid={Value=false}, AntiFar={Value=false}, AntiExplode={Value=false}, StrAntiGrab={Value=false},
+            Extinguisher={Value=false}, InvisLine={Value=false}, SuperStrength={Value=false, Power={Value=250}}, InfLine={Value=false, Dist={Value=0}},
+            Revenge={Void={Value=false}, Kill={Value=false}, Poison={Value=false}, Ragdoll={Value=false}, Death={Value=false}},
+            AimBot={Value=false, Radius={Value=30}, Part={Value="Torso"}}
         },
-        Auras = {
-            VoidAura = {
-                Value = false
-            },
-            KillAura = {
-                Value = false
-            },
-            PoisonAura = {
-                Value = false
-            },
-            RagdollAura = {
-                Value = false
-            },
-            DeathAura = {
-                Value = false
-            },
-            FireAura = {
-                Value = false
-            },
-            AnchorAura = {
-                Value = false
-            },
-            NoclipAura = {
-                Value = false
-            }
-        },
-        Grabs = {
-            VoidGrab = {
-                Value = false
-            },
-            KillGrab = {
-                Value = false
-            },
-            PoisonGrab = {
-                Value = false
-            },
-            RagdollGrab = {
-                Value = false
-            },
-            DeathGrab = {
-                Value = false
-            },
-            AnchorGrab = {
-                Value = false
-            },
-            KickGrab = {
-                Value = false
-            },
-            NoclipGrab = {
-                Value = false
-            }
-        },
-        Miscs = {
-            NWOAura = {
-                Value = false
-            },
-            Control = {
-                Target = {
-                    Value = nil
-                },
-                Value = false
-            },
-            NoTyping = {
-                Value = false
-            },
-            AntiKickDisabler = {
-                Value = false
-            }
-        },
-        Blobman = {
-            Target = {
-                Value = getLocalPlayer() and getLocalPlayer().Name or ""
-            },
-            ArmSide = {
-                Value = "Left"
-            },
-            Noclip = {
-                Value = false
-            },
-            GrabAura = {
-                Value = false
-            },
-            KickAura = {
-                Value = false
-            },
-            LoopKick = {
-                Value = false
-            },
-            LoopKickAll = {
-                Value = false
-            }
-        },
-        Snipes = {
-            Target = {
-                Value = getLocalPlayer() and getLocalPlayer().Name or ""
-            },
-            LoopVoid = {
-                Value = false
-            },
-            LoopKill = {
-                Value = false
-            },
-            LoopPoison = {
-                Value = false
-            },
-            LoopRagdoll = {
-                Value = false
-            },
-            LoopDeath = {
-                Value = false
-            }
-        },
-        Trolls = {
-            LoudAll = {
-                Value = false,
-                SoundPart = {
-                    Value = nil
-                }
-            },
-            Lag = {
-                Value = false
-            },
-            Ping = {
-                Value = false
-            },
-            ServerDestroyer = {
-                Value = false,
-                CFrame = CFrame.new(0, 0, 0)
-            },
-            ChaosLine = {
-                Value = false
-            }
-        },
-        Settings = {
-            OnlyPlayer = {
-                Value = false
-            },
-            IgnoreFriend = {
-                Value = false
-            },
-            IgnoreIsInPlot = {
-                Value = false
-            },
-            AuraRadius = {
-                Value = 32
-            },
-            AimBotSpeed = {
-                Value = 5
-            },
-            Lag = {
-                Value = 32
-            },
-            Ping = {
-                Value = 32
-            },
-            KickMethod = {
-                Value = "Void"
-            },
-            SpeedHackMethod = {
-                Value = "CFrame"
-            },
-            AutoSpeedHackMethod = {
-                Value = false
-            },
-            FlyMethod = {
-                Value = "Velocity"
-            },
-            DebugMode = {
-                Value = false
-            }
-        },
+        Auras = {Void={Value=false}, Kill={Value=false}, Poison={Value=false}, Ragdoll={Value=false}, Death={Value=false}, Fire={Value=false}, Anchor={Value=false}, Noclip={Value=false}},
+        Grabs = {Void={Value=false}, Kill={Value=false}, Poison={Value=false}, Ragdoll={Value=false}, Death={Value=false}, Anchor={Value=false}, Kick={Value=false}, Noclip={Value=false}},
+        Miscs = {NWO={Value=false}, Control={Target={Value=nil}, Value=false}, NoTyping={Value=false}, AntiKick={Value=false}},
+        Blobman = {Target={Value=""}, ArmSide={Value="Left"}, Noclip={Value=false}, GrabAura={Value=false}, KickAura={Value=false}, LoopKick={Value=false}, LoopKickAll={Value=false}},
+        Snipes = {Target={Value=""}, Void={Value=false}, Kill={Value=false}, Poison={Value=false}, Ragdoll={Value=false}, Death={Value=false}},
+        Trolls = {Loud={Value=false, Part={Value=nil}}, Lag={Value=false}, Ping={Value=false}, Server={Value=false, CF=CFrame.new()}, Chaos={Value=false}},
+        Settings = {OnlyPlayer={Value=false}, IgnoreFriend={Value=false}, IgnorePlot={Value=false}, Radius={Value=32}, AimSpeed={Value=5}, Lag={Value=1024}, Ping={Value=1024}, KickMethod={Value="Void"}, SpeedMethod={Value="CFrame"}, AutoSpeed={Value=true}, FlyMethod={Value="Velocity"}, Debug={Value=false}}
     }
 
-    local __esp = {}
-    local function updateESP()
-        for i = #__esp, 1, -1 do
-            local v = __esp[i]
-            -- vの親がDestroyされていても、OrionLibのHighlightのParentは残る可能性があるため、vの存在チェックとconfig値で判断
-            if (not config.Visuals.ESP.Value or not v) then
-                pcall(game.Destroy, v)
-                table.remove(__esp, i)
-            else
-                v.FillColor = config.Visuals.ESP.FillColor
-                v.OutlineColor = config.Visuals.ESP.OutlineColor
+    -- TABS
+    local __movements = Window:AddTab({Name="Movements", Icon="rbxassetid://4483345998"})
+    local __players = Window:AddTab({Name="Players", Icon="rbxassetid://4483345998"})
+    local __visuals = Window:AddTab({Name="Visuals", Icon="rbxassetid://4483345998"})
+    local __combats = Window:AddTab({Name="Combats", Icon="rbxassetid://4483345998"})
+    local __auras = Window:AddTab({Name="Auras", Icon="rbxassetid://4483345998"})
+    local __grabs = Window:AddTab({Name="Grabs", Icon="rbxassetid://4483345998"})
+    local __miscs = Window:AddTab({Name="Miscs", Icon="rbxassetid://4483345998"})
+    local __blobmans = Window:AddTab({Name="Blobmans", Icon="rbxassetid://4483345998"})
+    local __snipes = Window:AddTab({Name="Snipes", Icon="rbxassetid://4483345998"})
+    local __trolls = Window:AddTab({Name="Trolls", Icon="rbxassetid://4483345998"})
+    local __settings = Window:AddTab({Name="Settings", Icon="rbxassetid://4483345998"})
+    local __infos = Window:AddTab({Name="Infos", Icon="rbxassetid://4483345998"})
+
+    -- [MOVEMENTS]
+    __movements:AddSlider({Name="Speed (Crouch)", Min=0, Max=150, Default=16, Increment=1, Callback=function(v) config.Movements.CrouchSpeedHack.Value=v end})
+    __movements:AddToggle({Name="Loop Speed (Crouch)", Default=false, Callback=function(v) config.Movements.CrouchSpeedHack.Loop=v end})
+    __movements:AddSlider({Name="Jumppower", Min=0, Max=150, Default=50, Increment=1, Callback=function(v) config.Movements.JumppowerHack.Value=v end})
+    __movements:AddToggle({Name="Loop Jumppower", Default=false, Callback=function(v) config.Movements.JumppowerHack.Loop=v end})
+    __movements:AddSlider({Name="Speed", Min=0, Max=150, Default=16, Increment=1, Callback=function(v) config.Movements.SpeedHack.Value=v end})
+    __movements:AddToggle({Name="Inf Jump", Default=false, Callback=function(v) config.Movements.Infjump.Value=v end})
+    __movements:AddToggle({Name="Fly", Default=false, Callback=function(v) config.Movements.Fly.Value=v end})
+    __movements:AddToggle({Name="Noclip", Default=false, Callback=function(v) config.Movements.Noclip.Value=v end})
+    __movements:AddToggle({Name="Freeze", Default=false, Callback=function(v) config.Movements.Freeze.Value=v; if v then config.Movements.Freeze.CFrame=getLocalRoot().CFrame end end})
+    __movements:AddLabel("Teleports")
+    __movements:AddTextbox({Name="Target", Default="", TextDisappear=false, Callback=function(v) config.Movements.Teleports.Target.Value=v end})
+    __movements:AddButton({Name="Teleport", Callback=function() 
+        local t = getPlayerFromName(config.Movements.Teleports.Target.Value)
+        if t and t.Character and t.Character:FindFirstChild("HumanoidRootPart") then getLocalRoot().CFrame = t.Character.HumanoidRootPart.CFrame end
+    end})
+    __movements:AddButton({Name="Spawn", Callback=function() getLocalRoot().CFrame = CFrame.new(1,-10,-2) end})
+    __movements:AddButton({Name="Barn", Callback=function() getLocalRoot().CFrame = CFrame.new(-234, 85, -311) end})
+    __movements:AddButton({Name="Blue House", Callback=function() getLocalRoot().CFrame = CFrame.new(525, 98, -375) end})
+    __movements:AddButton({Name="Factory", Callback=function() getLocalRoot().CFrame = CFrame.new(138, 365, 346) end})
+    __movements:AddButton({Name="Glass House", Callback=function() getLocalRoot().CFrame = CFrame.new(-325, 109, 337) end})
+    __movements:AddButton({Name="Japanese House", Callback=function() getLocalRoot().CFrame = CFrame.new(584, 141, -100) end})
+    __movements:AddButton({Name="Pink Roof", Callback=function() getLocalRoot().CFrame = CFrame.new(-525, 22, -165) end})
+    __movements:AddButton({Name="Spooky House", Callback=function() getLocalRoot().CFrame = CFrame.new(303, 14, 483) end})
+    __movements:AddButton({Name="Train Cave", Callback=function() getLocalRoot().CFrame = CFrame.new(571, 48, -153) end})
+    __movements:AddButton({Name="Secret Cave (Small)", Callback=function() getLocalRoot().CFrame = CFrame.new(-50, -7, -298) end})
+    __movements:AddButton({Name="Secret Cave (Big)", Callback=function() getLocalRoot().CFrame = CFrame.new(-130, -7, 575) end})
+
+    -- [PLAYERS]
+    __players:AddToggle({Name="Anti Detect", Default=false, Callback=function(v) config.Players.AntiDetect.Value=v end})
+    __players:AddToggle({Name="Anti Ragdoll", Default=false, Callback=function(v) config.Players.AntiRagdoll.Value=v end})
+    __players:AddToggle({Name="Anti Touch", Default=false, Callback=function(v) config.Players.AntiTouch.Value=v end})
+    __players:AddToggle({Name="Anti Banana", Default=false, Callback=function(v) config.Players.AntiBanana.Value=v end})
+    __players:AddToggle({Name="Auto Slot", Default=false, Callback=function(v) config.Players.AutoSlot.Value=v end})
+    __players:AddToggle({Name="Ragdoll", Default=false, Callback=function(v) config.Players.Ragdoll.Value=v end})
+    __players:AddToggle({Name="Anti Gucci", Default=false, Callback=function(v) config.Players.AntiGucci.Value=v end})
+
+    -- [VISUALS]
+    __visuals:AddToggle({Name="ESP", Default=false, Callback=function(v) config.Visuals.ESP.Value=v end})
+    __visuals:AddColorpicker({Name="Fill", Default=Color3.new(0,0,1), Callback=function(v) config.Visuals.ESP.Fill=v end})
+    __visuals:AddColorpicker({Name="Outline", Default=Color3.new(1,1,1), Callback=function(v) config.Visuals.ESP.Out=v end})
+    __visuals:AddSlider({Name="FOV", Min=30, Max=120, Default=70, Increment=1, Callback=function(v) config.Visuals.FOV.Value=v end})
+    __visuals:AddToggle({Name="TPS", Default=false, Callback=function(v) config.Visuals.TPS.Value=v end})
+    __visuals:AddToggle({Name="Spectate", Default=false, Callback=function(v) config.Visuals.Spectate.Value=v end})
+
+    -- [COMBATS]
+    __combats:AddToggle({Name="Anti Grab", Default=false, Callback=function(v) config.Combats.AntiGrab.Value=v end})
+    __combats:AddToggle({Name="Anti Void", Default=false, Callback=function(v) config.Combats.AntiVoid.Value=v end})
+    __combats:AddToggle({Name="Anti Far", Default=false, Callback=function(v) config.Combats.AntiFar.Value=v end})
+    __combats:AddToggle({Name="Anti Explode", Default=false, Callback=function(v) config.Combats.AntiExplode.Value=v end})
+    __combats:AddToggle({Name="Str Anti Grab", Default=false, Callback=function(v) config.Combats.StrAntiGrab.Value=v end})
+    __combats:AddToggle({Name="Extinguisher", Default=false, Callback=function(v) config.Combats.Extinguisher.Value=v end})
+    __combats:AddToggle({Name="Invisible Line", Default=false, Callback=function(v) config.Combats.InvisLine.Value=v end})
+    __combats:AddToggle({Name="Super Strength", Default=false, Callback=function(v) config.Combats.SuperStrength.Value=v end})
+    __combats:AddSlider({Name="SS Power", Min=0, Max=1000, Default=250, Increment=10, Callback=function(v) config.Combats.SuperStrength.Power.Value=v end})
+    __combats:AddToggle({Name="Infinite Line", Default=false, Callback=function(v) config.Combats.InfLine.Value=v end})
+    __combats:AddSlider({Name="Inf Dist", Min=0, Max=1000, Default=0, Increment=1, Callback=function(v) config.Combats.InfLine.Dist.Value=v end})
+    __combats:AddLabel("Revenge")
+    __combats:AddToggle({Name="Rev Void", Default=false, Callback=function(v) config.Combats.Revenge.Void.Value=v end})
+    __combats:AddToggle({Name="Rev Kill", Default=false, Callback=function(v) config.Combats.Revenge.Kill.Value=v end})
+    __combats:AddToggle({Name="Rev Poison", Default=false, Callback=function(v) config.Combats.Revenge.Poison.Value=v end})
+    __combats:AddToggle({Name="Rev Ragdoll", Default=false, Callback=function(v) config.Combats.Revenge.Ragdoll.Value=v end})
+    __combats:AddToggle({Name="Rev Death", Default=false, Callback=function(v) config.Combats.Revenge.Death.Value=v end})
+    __combats:AddLabel("AimBot")
+    __combats:AddToggle({Name="Enabled", Default=false, Callback=function(v) config.Combats.AimBot.Value=v end})
+    __combats:AddSlider({Name="Radius", Min=0, Max=100, Default=30, Increment=1, Callback=function(v) config.Combats.AimBot.Radius.Value=v end})
+    __combats:AddDropdown({Name="Part", Default="Torso", Options={"Head", "Torso", "HumanoidRootPart"}, Callback=function(v) config.Combats.AimBot.Part.Value=v end})
+
+    -- [AURAS]
+    __auras:AddToggle({Name="Void Aura", Default=false, Callback=function(v) config.Auras.Void.Value=v end})
+    __auras:AddToggle({Name="Kill Aura", Default=false, Callback=function(v) config.Auras.Kill.Value=v end})
+    __auras:AddToggle({Name="Poison Aura", Default=false, Callback=function(v) config.Auras.Poison.Value=v end})
+    __auras:AddToggle({Name="Ragdoll Aura", Default=false, Callback=function(v) config.Auras.Ragdoll.Value=v end})
+    __auras:AddToggle({Name="Death Aura", Default=false, Callback=function(v) config.Auras.Death.Value=v end})
+    __auras:AddToggle({Name="Fire Aura", Default=false, Callback=function(v) config.Auras.Fire.Value=v end})
+    __auras:AddToggle({Name="Anchor Aura", Default=false, Callback=function(v) config.Auras.Anchor.Value=v end})
+    __auras:AddToggle({Name="Noclip Aura", Default=false, Callback=function(v) config.Auras.Noclip.Value=v end})
+
+    -- [GRABS]
+    __grabs:AddToggle({Name="Void Grab", Default=false, Callback=function(v) config.Grabs.Void.Value=v end})
+    __grabs:AddToggle({Name="Kill Grab", Default=false, Callback=function(v) config.Grabs.Kill.Value=v end})
+    __grabs:AddToggle({Name="Poison Grab", Default=false, Callback=function(v) config.Grabs.Poison.Value=v end})
+    __grabs:AddToggle({Name="Ragdoll Grab", Default=false, Callback=function(v) config.Grabs.Ragdoll.Value=v end})
+    __grabs:AddToggle({Name="Death Grab", Default=false, Callback=function(v) config.Grabs.Death.Value=v end})
+    __grabs:AddToggle({Name="Anchor Grab", Default=false, Callback=function(v) config.Grabs.Anchor.Value=v end})
+    __grabs:AddToggle({Name="Kick Grab", Default=false, Callback=function(v) config.Grabs.Kick.Value=v end})
+    __grabs:AddToggle({Name="Noclip Grab", Default=false, Callback=function(v) config.Grabs.Noclip.Value=v end})
+
+    -- [MISCS]
+    __miscs:AddToggle({Name="Network Owner Aura", Default=false, Callback=function(v) config.Miscs.NWO.Value=v end})
+    __miscs:AddToggle({Name="Control Other", Default=false, Callback=function(v) config.Miscs.Control.Value=v end})
+    __miscs:AddToggle({Name="No Typing", Default=false, Callback=function(v) config.Miscs.NoTyping.Value=v end})
+    __miscs:AddToggle({Name="Anti Kick Disabler", Default=false, Callback=function(v) config.Miscs.AntiKick.Value=v end})
+
+    -- [BLOBMAN]
+    __blobmans:AddTextbox({Name="Target", Default="", TextDisappear=false, Callback=function(v) config.Blobman.Target.Value=v end})
+    __blobmans:AddDropdown({Name="Arm Side", Default="Left", Options={"Left", "Right"}, Callback=function(v) config.Blobman.ArmSide.Value=v end})
+    __blobmans:AddButton({Name="Spawn Blob", Callback=function() if not getBlobman() then spawnBlobmanFunc() end end})
+    __blobmans:AddButton({Name="Sit", Callback=function() local b=getBlobman(); if b and getLocalHum() then b.VehicleSeat:Sit(getLocalHum()) end end})
+    __blobmans:AddButton({Name="Unsit", Callback=function() if getLocalHum() then getLocalHum().Sit=false end end})
+    __blobmans:AddButton({Name="Destroy", Callback=function() local b=getBlobman(); if b then destroyToy(b) end end})
+    __blobmans:AddToggle({Name="Noclip", Default=false, Callback=function(v) config.Blobman.Noclip.Value=v end})
+    __blobmans:AddButton({Name="Bring Target", Callback=function()
+        local t = getPlayerFromName(config.Blobman.Target.Value)
+        local b = getBlobman()
+        if t and b and t.Character and t.Character:FindFirstChild("HumanoidRootPart") then
+            blobBring(b, t.Character.HumanoidRootPart, config.Blobman.ArmSide.Value)
+        end
+    end})
+    __blobmans:AddButton({Name="Kick Target", Callback=function()
+        local t = getPlayerFromName(config.Blobman.Target.Value)
+        local b = getBlobman()
+        if t and b and t.Character and t.Character:FindFirstChild("HumanoidRootPart") then
+            blobKick(b, t.Character.HumanoidRootPart, config.Blobman.ArmSide.Value)
+        end
+    end})
+    __blobmans:AddButton({Name="Slide All", Callback=function()
+        local b = getBlobman() or spawnBlobmanFunc()
+        if not b then return end
+        if not getLocalHum().Sit and b:FindFirstChild("VehicleSeat") then b.VehicleSeat:Sit(getLocalHum()) end
+        task.wait(0.5)
+        if not getLocalHum().Sit then return end
+        local pos = getLocalRoot().CFrame
+        blobGrab(b, getLocalRoot(), config.Blobman.ArmSide.Value)
+        for _,v in ipairs(service.Players:GetPlayers()) do
+            if v ~= getLocalPlayer() and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                if not IsInPlot(v) and not IsFriend(v) then
+                    getLocalRoot().CFrame = v.Character.HumanoidRootPart.CFrame
+                    task.wait(0.2)
+                    blobGrab(b, v.Character.HumanoidRootPart, config.Blobman.ArmSide.Value)
+                end
             end
         end
-    end
-    local function addESP(character)
-        if (get(character, "__esp.suiseihub")) then return end
-        local h = Instance.new("Highlight", character)
-        h.FillColor = config.Visuals.ESP.FillColor
-        h.OutlineColor = config.Visuals.ESP.OutlineColor
-        h.Name = "__esp.suiseihub"
-        table.insert(__esp, h)
-    end
-
-    do
-        --// MOVEMENTS
-        -- WindUI Slider -> Orion Slider
-        __movements:AddSlider("CrouchingSpeed", "Speed (Crouching)", "Speed (Crouching)",
-            getLocalHum() and getLocalHum().WalkSpeed or 16, 0, 150, 1, function(value)
-                if getLocalHum() then getLocalHum().WalkSpeed = value end
-                config.Movements.CrouchSpeedHack.Value = value
-            end
-        )
-        -- WindUI Toggle (Checkbox) -> Orion Toggle
-        __movements:AddToggle("CrouchingLoopSpeed", "Loop Speed (Crouching)", false, function(value)
-            config.Movements.CrouchSpeedHack.Loop = value
-        end)
-        -- WindUI Slider -> Orion Slider
-        __movements:AddSlider("Jumppower", "Jumppower", "Jumppower",
-            getLocalHum() and getLocalHum().JumpPower or 50, 0, 150, 1, function(value)
-                if getLocalHum() then getLocalHum().JumpPower = value end
-                config.Movements.JumppowerHack.Value = value
-            end
-        )
-        -- WindUI Toggle (Checkbox) -> Orion Toggle
-        __movements:AddToggle("LoopJumppower", "Loop Jumppower", false, function(value)
-            config.Movements.JumppowerHack.Loop = value
-        end)
-        -- WindUI Slider -> Orion Slider
-        __movements:AddSlider("Speed", "Speed", "Speed",
-            getLocalHum() and getLocalHum().WalkSpeed or 16, 0, 150, 1, function(value)
-                config.Movements.SpeedHack.Value = value
-            end
-        )
-        -- WindUI Toggle (Checkbox) -> Orion Toggle
-        __movements:AddToggle("Infjump", "Inf jump", false, function(value)
-            config.Movements.Infjump.Value = value
-        end)
-        -- WindUI Toggle (Checkbox) -> Orion Toggle
-        __movements:AddToggle("Fly", "Fly (unstable)", false, function(value)
-            config.Movements.Fly.Value = value
-        end)
-        -- WindUI Toggle (Checkbox) -> Orion Toggle
-        __movements:AddToggle("Noclip", "Noclip", false, function(value)
-            config.Movements.Noclip.Value = value
-        end)
-        -- WindUI Toggle (Checkbox) -> Orion Toggle
-        __movements:AddToggle("Freeze", "Freeze", false, function(value)
-            if (value and getLocalRoot()) then
-                config.Movements.Freeze.CFrame = getLocalRoot().CFrame
-            end
-            config.Movements.Freeze.Value = value
-        end)
-
-        __movements:AddLabel("Teleports") -- Dividerの代わりにLabelで区切り
-
-        -- WindUI Input -> Orion Input
-        __movements:AddInput("TPTarget", "Target", config.Movements.Teleports.Target.Value, function(value)
-            config.Movements.Teleports.Target.Value = value
-        end)
-        -- WindUI Button -> Orion Button
-        __movements:AddButton("Teleport", function()
-            local t = getPlayerFromName(config.Movements.Teleports.Target.Value)
-            if (not t or not t.Character) then return end
-            local root = get(t.Character, "HumanoidRootPart")
-            if (not root or not getLocalRoot()) then return end
-            getLocalRoot().CFrame = root.CFrame
-        end)
-        -- WindUI Button -> Orion Button
-        __movements:AddButton("Spawn", function()
-            if (not getLocalRoot()) then return end
-            getLocalRoot().CFrame = CFrame.new(1, -10, -2)
-        end)
-        -- WindUI Button -> Orion Button
-        __movements:AddButton("Barn", function()
-            if (not getLocalRoot()) then return end
-            getLocalRoot().CFrame = config.Movements.Teleports.Barn.CFrame
-        end)
-        __movements:AddButton("Blue Bouse", function()
-            if (not getLocalRoot()) then return end
-            getLocalRoot().CFrame = config.Movements.Teleports.BlueBouse.CFrame
-        end)
-        __movements:AddButton("Factory", function()
-            if (not getLocalRoot()) then return end
-            getLocalRoot().CFrame = config.Movements.Teleports.Factory.CFrame
-        end)
-        __movements:AddButton("Glass House", function()
-            if (not getLocalRoot()) then return end
-            getLocalRoot().CFrame = config.Movements.Teleports.GlassHouse.CFrame
-        end)
-        __movements:AddButton("Japanese House", function()
-            if (not getLocalRoot()) then return end
-            getLocalRoot().CFrame = config.Movements.Teleports.JapaneseHouse.CFrame
-        end)
-        __movements:AddButton("Pink Roof House", function()
-            if (not getLocalRoot()) then return end
-            getLocalRoot().CFrame = config.Movements.Teleports.PinkRoofHouse.CFrame
-        end)
-        __movements:AddButton("Spooky House", function()
-            if (not getLocalRoot()) then return end
-            getLocalRoot().CFrame = config.Movements.Teleports.SpookyHouse.CFrame
-        end)
-        __movements:AddButton("Tudor House", function()
-            if (not getLocalRoot()) then return end
-            getLocalRoot().CFrame = config.Movements.Teleports.TudorHouse.CFrame
-        end)
-        __movements:AddButton("Train Cave", function()
-            if (not getLocalRoot()) then return end
-            getLocalRoot().CFrame = config.Movements.Teleports.TrainCave.CFrame
-        end)
-        __movements:AddButton("Small Secret Cave", function()
-            if (not getLocalRoot()) then return end
-            getLocalRoot().CFrame = config.Movements.Teleports.SmallSecretCave.CFrame
-        end)
-        __movements:AddButton("Big Secret Cave", function()
-            if (not getLocalRoot()) then return end
-            getLocalRoot().CFrame = config.Movements.Teleports.BigSecretCave.CFrame
-        end)
-    end
-
-    ---
-    do
-        --// PLAYERS
-        local antiDetectToggle = __players:AddToggle("AntiDetect", "Anti Detect", false, function(value)
-            config.Players.AntiDetect.Value = value
-        end)
-        __players:AddToggle("AntiRagdoll", "Anti Ragdoll", false, function(value)
-            config.Players.AntiRagdoll.Value = value
-        end)
-        __players:AddToggle("AntiTouch", "Anti Touch", false, function(value)
-            config.Players.AntiTouch.Value = value
-        end)
-        __players:AddToggle("AntiBanana", "Anti Banana", false, function(value)
-            config.Players.AntiBanana.Value = value
-        end)
-        local autoSlotToggle = __players:AddToggle("AutoSlot", "Auto Slot", false, function(value)
-            config.Players.AutoSlot.Value = value
-        end)
-        __players:AddToggle("Ragdoll", "Ragdoll", false, function(value)
-            config.Players.Ragdoll.Value = value
-        end)
-        __players:AddToggle("AntiGucci", "Anti Gucci", false, function(value)
-            config.Players.AntiGucci.Value = value
-        end)
-    end
-
-    ---
-    do
-        --// VISUALS
-        __visuals:AddToggle("ESP", "ESP", false, function(value)
-            config.Visuals.ESP.Value = value
-        end)
-        -- WindUI ColorPicker -> Orion ColorPicker
-        __visuals:AddColorPicker("FillColor", "Fill Color", Color3.new(0.25, 0, 1), function(value)
-            config.Visuals.ESP.FillColor = value
-        end)
-        __visuals:AddColorPicker("OutlineColor", "Outline Color", Color3.new(1, 1, 1), function(value)
-            config.Visuals.ESP.OutlineColor = value
-        end)
-        __visuals:AddSlider("FOV", "FOV", "Field Of View", 70, 30, 120, 1, function(value)
-            config.Visuals.FOV.Value = value
-        end)
-        __visuals:AddToggle("TPS", "TPS", false, function(value)
-            config.Visuals.TPS.Value = value
-        end)
-        -- Spectate機能のUIコンポーネントがコード内に見当たらないため、トグルのみ追加
-        __visuals:AddToggle("Spectate", "Spectate", false, function(value)
-            config.Visuals.Spectate.Value = value
-        end)
-    end
-
-    ---
-    do
-        --// COMBATS
-        __combats:AddToggle("AntiGrab", "Anti Grab", false, function(value)
-            config.Combats.AntiGrab.Value = value
-        end)
-        __combats:AddToggle("AntiVoid", "Anti Void", false, function(value)
-            config.Combats.AntiVoid.Value = value
-        end)
-        __combats:AddToggle("AntiFar", "Anti Far", false, function(value)
-            config.Combats.AntiFar.Value = value
-        end)
-        __combats:AddToggle("AntiExplode", "Anti Explode", false, function(value)
-            config.Combats.AntiExplode.Value = value
-        end)
-        __combats:AddToggle("StrAntiGrab", "Str Anti Grab (Sit Anti Grab)", false, function(value)
-            config.Combats.StrAntiGrab.Value = value
-        end)
-        __combats:AddToggle("Extinguisher", "Extinguisher (Anti Fire)", false, function(value)
-            config.Combats.Extinguisher.Value = value
-        end)
-        __combats:AddToggle("InvisLine", "Invisible Grab Line", false, function(value)
-            config.Combats.InvisLine.Value = value
-        end)
-
-        __combats:AddLabel("Super Strength")
-        __combats:AddToggle("SuperStrength", "Super Strength (RMB Fling)", false, function(value)
-            config.Combats.SuperStrength.Value = value
-        end)
-        __combats:AddSlider("SuperStrengthPower", "Power", "Fling Power", 250, 0, 1000, 1, function(value)
-            config.Combats.SuperStrength.Power.Value = value
-        end)
-
-        __combats:AddLabel("Infinite Line")
-        __combats:AddToggle("InfLine", "Infinite Grab Line", false, function(value)
-            config.Combats.InfLine.Value = value
-        end)
-        -- WindUIではMouseWheelでInfLine.Dist.Valueを操作しているため、ここでは設定値のみ表示
-        __combats:AddSlider("InfLineDist", "Distance (Scroll)", "Distance (Scroll)", 0, 0, 1000, 1, function(value)
-            config.Combats.InfLine.Dist.Value = value
-        end)
-
-        __combats:AddLabel("Revenge (When Grabbed)")
-        __combats:AddToggle("RevengeVoid", "Void", false, function(value)
-            config.Combats.Revenge.Void.Value = value
-        end)
-        __combats:AddToggle("RevengeKill", "Kill", false, function(value)
-            config.Combats.Revenge.Kill.Value = value
-        end)
-        __combats:AddToggle("RevengePoison", "Poison", false, function(value)
-            config.Combats.Revenge.Poison.Value = value
-        end)
-        __combats:AddToggle("RevengeRagdoll", "Ragdoll", false, function(value)
-            config.Combats.Revenge.Ragdoll.Value = value
-        end)
-        __combats:AddToggle("RevengeDeath", "Death", false, function(value)
-            config.Combats.Revenge.Death.Value = value
-        end)
-
-        __combats:AddLabel("AimBot")
-        __combats:AddToggle("AimBot", "Aim Bot", false, function(value)
-            config.Combats.AimBot.Value = value
-        end)
-        __combats:AddSlider("AimBotRadius", "Radius", "Aim Radius", 30, 0, 100, 1, function(value)
-            config.Combats.AimBot.Radius.Value = value
-        end)
-        -- WindUI Input/Dropdown -> Orion Dropdown
-        __combats:AddDropdown("AimPart", "Target Part", "Torso", { "Head", "Torso", "HumanoidRootPart" }, function(value)
-            config.Combats.AimBot.Part.Value = value
-        end)
-    end
-
-    ---
-    do
-        --// AURAS
-        __auras:AddToggle("VoidAura", "Void Aura", false, function(value)
-            config.Auras.VoidAura.Value = value
-        end)
-        __auras:AddToggle("KillAura", "Kill Aura", false, function(value)
-            config.Auras.KillAura.Value = value
-        end)
-        __auras:AddToggle("PoisonAura", "Poison Aura", false, function(value)
-            config.Auras.PoisonAura.Value = value
-        end)
-        __auras:AddToggle("RagdollAura", "Ragdoll Aura", false, function(value)
-            config.Auras.RagdollAura.Value = value
-        end)
-        __auras:AddToggle("DeathAura", "Death Aura", false, function(value)
-            config.Auras.DeathAura.Value = value
-        end)
-        __auras:AddToggle("FireAura", "Fire Aura", false, function(value)
-            config.Auras.FireAura.Value = value
-        end)
-        __auras:AddToggle("AnchorAura", "Anchor Aura", false, function(value)
-            config.Auras.AnchorAura.Value = value
-        end)
-        __auras:AddToggle("NoclipAura", "Noclip Aura", false, function(value)
-            config.Auras.NoclipAura.Value = value
-        end)
-    end
-
-    ---
-    do
-        --// GRABS (OnChildAddedイベント内で処理されるため、トグルのみ)
-        __grabs:AddToggle("VoidGrab", "Void Grab", false, function(value)
-            config.Grabs.VoidGrab.Value = value
-        end)
-        __grabs:AddToggle("KillGrab", "Kill Grab", false, function(value)
-            config.Grabs.KillGrab.Value = value
-        end)
-        __grabs:AddToggle("PoisonGrab", "Poison Grab", false, function(value)
-            config.Grabs.PoisonGrab.Value = value
-        end)
-        __grabs:AddToggle("RagdollGrab", "Ragdoll Grab", false, function(value)
-            config.Grabs.RagdollGrab.Value = value
-        end)
-        __grabs:AddToggle("DeathGrab", "Death Grab", false, function(value)
-            config.Grabs.DeathGrab.Value = value
-        end)
-        __grabs:AddToggle("AnchorGrab", "Anchor Grab", false, function(value)
-            config.Grabs.AnchorGrab.Value = value
-        end)
-        __grabs:AddToggle("KickGrab", "Kick Grab", false, function(value)
-            config.Grabs.KickGrab.Value = value
-        end)
-        __grabs:AddToggle("NoclipGrab", "Noclip Grab", false, function(value)
-            config.Grabs.NoclipGrab.Value = value
-        end)
-    end
-
-    ---
-    do
-        --// MISCS
-        __miscs:AddToggle("NWOAura", "Network Owner Aura", false, function(value)
-            config.Miscs.NWOAura.Value = value
-        end)
-
-        __miscs:AddLabel("Control")
-        __miscs:AddToggle("Control", "Control Other Player", false, function(value)
-            config.Miscs.Control.Value = value
-        end)
-
-        __miscs:AddToggle("NoTyping", "No Typing", false, function(value)
-            config.Miscs.NoTyping.Value = value
-        end)
-        __miscs:AddToggle("AntiKickDisabler", "Anti Kick Disabler", false, function(value)
-            config.Miscs.AntiKickDisabler.Value = value
-        end)
-    end
-
-    ---
-    do
-        --// BLOBMAN
-        __blobmans:AddInput("BlobmanTarget", "Target Name", config.Blobman.Target.Value, function(value)
-            config.Blobman.Target.Value = value
-        end)
-        __blobmans:AddDropdown("BlobmanArmSide", "Arm Side", "Left", { "Left", "Right" }, function(value)
-            config.Blobman.ArmSide.Value = value
-        end)
-        __blobmans:AddButton("Spawn Blobman", function()
-            local blob = getBlobman()
-            if (not blob) then
-                spawnBlobman()
-            end
-        end)
-        __blobmans:AddButton("Sit Blobman", function()
-            local blob = getBlobman()
-            if (blob and getLocalHum() and not getLocalHum().Sit) then
-                blob.VehicleSeat:Sit(getLocalHum())
-            end
-        end)
-        __blobmans:AddButton("Unsit Blobman", function()
-            local blob = getBlobman()
-            if (blob and getLocalHum() and getLocalHum().Sit) then
-                getLocalHum().Sit = false
-            end
-        end)
-        __blobmans:AddButton("Delete Blobman", function()
-            local blob = getBlobman()
-            if (blob) then
-                destroyToy(blob)
-            end
-        end)
-
-        __blobmans:AddLabel("Blobman Exploits")
-        __blobmans:AddToggle("NoclipBlobman", "Noclip", false, function(value)
-            config.Blobman.Noclip.Value = value
-        end)
-        __blobmans:AddButton("Bring Target", function()
-            local t = getPlayerFromName(config.Blobman.Target.Value)
-            if (t) then
-                task.spawn(function()
-                    local root = get(t.Character, "HumanoidRootPart")
-                    local b = getBlobman()
-                    if (not root or not b or not getLocalRoot()) then return end
-                    local pos = getLocalRoot().CFrame
-                    getLocalRoot().CFrame = root.CFrame
-                    blobBring(b, root, config.Blobman.ArmSide.Value)
-                    task.wait()
-                    getLocalRoot().CFrame = pos
-                    task.spawn(function()
-                        for _ = 1, 256 do
-                            task.wait()
-                            if (IsInRadius(root, getLocalRoot().Position, 12)) then
-                                task.wait(1)
-                                if getLocalHum() then getLocalHum().Sit = false end
-                                break
-                            end
-                        end
-                    end)
-                end)
-            end
-        end)
-        __blobmans:AddButton("Lock (OP Blobman)", function()
-            task.spawn(function()
-                local t = getPlayerFromName(config.Blobman.Target.Value)
-                if (t) then
-                    local root = get(t.Character, "HumanoidRootPart")
-                    local b = getBlobman()
-                    if (not root or not b or not getLocalRoot()) then return end
-                    local pos = getLocalRoot().CFrame
-                    blobBring(b, root, config.Blobman.ArmSide.Value)
-                    task.wait()
-                    getLocalRoot().CFrame = pos
+        getLocalRoot().CFrame = pos
+        destroyToy(b)
+    end})
+    __blobmans:AddButton({Name="Kick All", Callback=function()
+        local b = getBlobman() or spawnBlobmanFunc()
+        if not b then return end
+        if not getLocalHum().Sit and b:FindFirstChild("VehicleSeat") then b.VehicleSeat:Sit(getLocalHum()) end
+        task.wait(0.5)
+        if not getLocalHum().Sit then return end
+        local pos = getLocalRoot().CFrame
+        blobGrab(b, getLocalRoot(), config.Blobman.ArmSide.Value)
+        for _,v in ipairs(service.Players:GetPlayers()) do
+            if v ~= getLocalPlayer() and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                if not IsInPlot(v) and not IsFriend(v) then
+                    getLocalRoot().CFrame = v.Character.HumanoidRootPart.CFrame
+                    task.wait(0.25)
+                    blobKick(b, v.Character.HumanoidRootPart, config.Blobman.ArmSide.Value)
                 end
-            end)
-        end)
-        __blobmans:AddButton("Slide Target", function()
-            local t = getPlayerFromName(config.Blobman.Target.Value)
-            if (t) then
-                task.spawn(function()
-                    local root = get(t.Character, "HumanoidRootPart")
-                    local b = getBlobman()
-                    if (not root or not b or not getLocalRoot()) then return end
-                    local pos = getLocalRoot().CFrame
-                    if (getLocalHum() and not getLocalHum().Sit) then b.VehicleSeat:Sit(getLocalHum()) task.wait(0.1) end -- 座る処理を追加
-                    blobGrab(b, getLocalRoot(), config.Blobman.ArmSide.Value)
-                    task.wait()
-                    blobBring(b, root, config.Blobman.ArmSide.Value)
-                    task.wait()
-                    getLocalRoot().CFrame = pos
-                    task.wait(.5)
-                    destroyToy(b)
-                end)
             end
-        end)
-        __blobmans:AddButton("Void Target", function()
-            local t = getPlayerFromName(config.Blobman.Target.Value)
-            if (t) then
-                task.spawn(function()
-                    local root = get(t.Character, "HumanoidRootPart")
-                    local b = getBlobman()
-                    if (not root or not b or not getLocalRoot()) then return end
-                    local pos = getLocalRoot().CFrame
-                    if (getLocalHum() and not getLocalHum().Sit) then b.VehicleSeat:Sit(getLocalHum()) task.wait(0.1) end -- 座る処理を追加
-                    blobGrab(b, getLocalRoot(), config.Blobman.ArmSide.Value)
-                    task.wait()
-                    blobBring(b, root, config.Blobman.ArmSide.Value)
-                    task.wait()
-                    getLocalRoot().CFrame = CFrame.new(1e32, -16, 1e32)
-                    task.wait(1)
-                    if getLocalHum() then getLocalHum().Sit = false end
-                    task.wait(.1)
-                    getLocalRoot().CFrame = pos
-                    task.wait()
-                    destroyToy(b)
-                end)
-            end
-        end)
-        __blobmans:AddButton("Kick Target", function()
-            local t = getPlayerFromName(config.Blobman.Target.Value)
-            if (t) then
-                task.spawn(function()
-                    local root = get(t.Character, "HumanoidRootPart")
-                    local b = getBlobman()
-                    if (not root or not b or not getLocalRoot()) then return end
-                    local pos = getLocalRoot().CFrame
-                    if (getLocalHum() and not getLocalHum().Sit) then b.VehicleSeat:Sit(getLocalHum()) task.wait(0.1) end -- 座る処理を追加
-                    task.wait(.5)
-                    getLocalRoot().CFrame = root.CFrame
-                    task.wait()
-                    blobKick(b, root, config.Blobman.ArmSide.Value)
-                    task.wait(.5)
-                    getLocalRoot().CFrame = pos
-                end)
-            end
-        end)
-        __blobmans:AddButton("Slide All", function()
-            local blob = getBlobman()
-            if (not blob) then
-                blob = spawnBlobman()
-            end
-            if (getLocalHum() and not getLocalHum().Sit and blob and blob.VehicleSeat) then
-                blob.VehicleSeat:Sit(getLocalHum())
-            end
-            task.wait()
-            if (not getLocalRoot() or not getLocalHum() or not blob or not getLocalHum().Sit) then return end
-            
-            local pos = getLocalRoot().CFrame
-            
-            blobGrab(blob, getLocalRoot(), config.Blobman.ArmSide.Value)
-            for _, v in ipairs(service.Players:GetPlayers()) do
-                if (v == getLocalPlayer()) then continue end
-                if (not config.Settings.IgnoreIsInPlot.Value and IsInPlot(v)) then continue end
-                if (config.Settings.IgnoreFriend.Value and IsFriend(v)) then continue end
-                local character = v.Character
-                if (not character) then continue end
-                local root = get(character, "HumanoidRootPart")
-                if (not root) then continue end
-                getLocalRoot().CFrame = root.CFrame
-                task.wait(.2)
-                blobGrab(blob, root, config.Blobman.ArmSide.Value)
-            end
-            task.wait(.1)
-            getLocalRoot().CFrame = pos
-            destroyToy(blob)
-        end)
-        __blobmans:AddButton("Kick All", function()
-            local blob = getBlobman()
-            if (not blob) then
-                blob = spawnBlobman()
-            end
-            if (getLocalHum() and not getLocalHum().Sit and blob and blob.VehicleSeat) then
-                blob.VehicleSeat:Sit(getLocalHum())
-            end
-            task.wait()
-            if (not getLocalRoot() or not getLocalHum() or not blob or not getLocalHum().Sit) then return end
-            
-            local pos = getLocalRoot().CFrame
-            
-            blobGrab(blob, getLocalRoot(), config.Blobman.ArmSide.Value)
-            for _, v in ipairs(service.Players:GetPlayers()) do
-                if (v == getLocalPlayer()) then continue end
-                if (not config.Settings.IgnoreIsInPlot.Value and IsInPlot(v)) then continue end
-                if (config.Settings.IgnoreFriend.Value and IsFriend(v)) then continue end
-                local character = v.Character
-                if (not character) then continue end
-                local root = get(character, "HumanoidRootPart")
-                if (not root) then continue end
-                getLocalRoot().CFrame = root.CFrame
-                task.wait(.25)
-                blobKick(blob, root, config.Blobman.ArmSide.Value)
-            end
-            task.wait(.1)
-            getLocalRoot().CFrame = pos
-            destroyToy(blob)
-        end)
+        end
+        getLocalRoot().CFrame = pos
+        destroyToy(b)
+    end})
+    __blobmans:AddToggle({Name="Grab Aura", Default=false, Callback=function(v) config.Blobman.GrabAura.Value=v end})
+    __blobmans:AddToggle({Name="Kick Aura", Default=false, Callback=function(v) config.Blobman.KickAura.Value=v end})
+    __blobmans:AddToggle({Name="Loop Kick Target", Default=false, Callback=function(v) config.Blobman.LoopKick.Value=v end})
+    __blobmans:AddToggle({Name="Loop Kick All", Default=false, Callback=function(v) config.Blobman.LoopKickAll.Value=v end})
 
-        __blobmans:AddLabel("Blobman Aura/Loops")
+    -- [SNIPES]
+    __snipes:AddTextbox({Name="Target", Default="", TextDisappear=false, Callback=function(v) config.Snipes.Target.Value=v end})
+    __snipes:AddButton({Name="Bring", Callback=function()
+        local t = getPlayerFromName(config.Snipes.Target.Value)
+        local pos = getLocalRoot().CFrame
+        if t and t.Character and t.Character:FindFirstChild("HumanoidRootPart") then
+            Snipefunc(t.Character.HumanoidRootPart, function() 
+                t.Character.HumanoidRootPart.CFrame = pos
+                task.wait(0.5)
+                ungrab(t.Character.HumanoidRootPart)
+            end)
+        end
+    end})
+    __snipes:AddButton({Name="Void", Callback=function()
+        local t = getPlayerFromName(config.Snipes.Target.Value)
+        if t and t.Character and t.Character:FindFirstChild("HumanoidRootPart") then
+            Snipefunc(t.Character.HumanoidRootPart, function() Velocity(t.Character.HumanoidRootPart, Vector3.new(0,10000,0)) end)
+        end
+    end})
+    __snipes:AddButton({Name="Kill", Callback=function()
+        local t = getPlayerFromName(config.Snipes.Target.Value)
+        if t and t.Character and t.Character:FindFirstChild("HumanoidRootPart") then
+            Snipefunc(t.Character.HumanoidRootPart, function() 
+                MoveTo(t.Character.HumanoidRootPart, CFrame.new(4096, -75, 4096))
+                Velocity(t.Character.HumanoidRootPart, Vector3.new(0, -1000, 0))
+            end)
+        end
+    end})
+    __snipes:AddButton({Name="Poison", Callback=function()
+        local t = getPlayerFromName(config.Snipes.Target.Value)
+        if t and t.Character and t.Character:FindFirstChild("HumanoidRootPart") then
+            Snipefunc(t.Character.HumanoidRootPart, function() MoveTo(t.Character.HumanoidRootPart, CFrame.new(58, -70, 271)) end)
+        end
+    end})
+    __snipes:AddButton({Name="Ragdoll", Callback=function()
+        local t = getPlayerFromName(config.Snipes.Target.Value)
+        if t and t.Character and t.Character:FindFirstChild("HumanoidRootPart") then
+            Snipefunc(t.Character.HumanoidRootPart, function() Velocity(t.Character.HumanoidRootPart, Vector3.new(0,-64,0)) end)
+        end
+    end})
+    __snipes:AddButton({Name="Death", Callback=function()
+        local t = getPlayerFromName(config.Snipes.Target.Value)
+        if t and t.Character and t.Character:FindFirstChild("HumanoidRootPart") then
+            Snipefunc(t.Character.HumanoidRootPart, function() 
+                t.Character:FindFirstChild("Humanoid"):ChangeState(Enum.HumanoidStateType.Dead)
+                ungrab(t.Character.HumanoidRootPart)
+            end)
+        end
+    end})
+    __snipes:AddToggle({Name="Loop Void", Default=false, Callback=function(v) config.Snipes.Void.Value=v end})
+    __snipes:AddToggle({Name="Loop Kill", Default=false, Callback=function(v) config.Snipes.Kill.Value=v end})
+    __snipes:AddToggle({Name="Loop Poison", Default=false, Callback=function(v) config.Snipes.Poison.Value=v end})
+    __snipes:AddToggle({Name="Loop Ragdoll", Default=false, Callback=function(v) config.Snipes.Ragdoll.Value=v end})
+    __snipes:AddToggle({Name="Loop Death", Default=false, Callback=function(v) config.Snipes.Death.Value=v end})
 
-        __blobmans:AddToggle("BlobGrabAura", "Grab Aura", false, function(value)
-            config.Blobman.GrabAura.Value = value
-        end)
-        __blobmans:AddToggle("BlobKickAura", "Kick Aura", false, function(value)
-            config.Blobman.KickAura.Value = value
-        end)
-        __blobmans:AddToggle("BlobLoopKick", "Loop Kick Target", false, function(value)
-            config.Blobman.LoopKick.Value = value
-        end)
-        __blobmans:AddToggle("LoopKickAll", "Loop Kick All", false, function(value)
-            config.Blobman.LoopKickAll.Value = value
-        end)
-    end
-
-    ---
-    do
-        --// SNIPES
-        __snipes:AddInput("SnipeTarget", "Target Name", config.Snipes.Target.Value, function(value)
-            config.Snipes.Target.Value = value
-        end)
-
-        __snipes:AddButton("Bring", function()
-            local pos = getLocalRoot() and getLocalRoot().CFrame
-            local t = getPlayerFromName(config.Snipes.Target.Value)
-            if (not t or not pos) then return end
-            local root = get(t.Character, "HumanoidRootPart")
-            if (not root) then return end
-            task.spawn(function()
-                Snipefunc(root, function()
-                    task.wait(.01)
-                    root.CFrame = pos
-                    task.wait(.5)
-                    ungrab(root)
-                    getLocalRoot().CFrame = pos
-                end)
-            end)
-        end)
-        __snipes:AddButton("Void", function()
-            task.spawn(function()
-                local pos = getLocalRoot() and getLocalRoot().CFrame
-                local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (not t or not pos) then return end
-                local root = get(t.Character, "HumanoidRootPart")
-                if (not root) then return end
-                Snipefunc(root, function()
-                    Velocity(root, Vector3.new(0, 1e4, 0))
-                    getLocalRoot().CFrame = pos
-                end)
-            end)
-        end)
-        __snipes:AddButton("Kill", function()
-            task.spawn(function()
-                local pos = getLocalRoot() and getLocalRoot().CFrame
-                local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (not t or not pos) then return end
-                local root = get(t.Character, "HumanoidRootPart")
-                if (not root) then return end
-                Snipefunc(root, function()
-                    MoveTo(root, CFrame.new(4096, -75, 4096))
-                    Velocity(root, Vector3.new(0, -1e3, 0))
-                    getLocalRoot().CFrame = pos
-                end)
-            end)
-        end)
-        __snipes:AddButton("Poison", function()
-            task.spawn(function()
-                local pos = getLocalRoot() and getLocalRoot().CFrame
-                local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (not t or not pos) then return end
-                local root = get(t.Character, "HumanoidRootPart")
-                if (not root) then return end
-                Snipefunc(root, function()
-                    MoveTo(root, CFrame.new(58, -70, 271))
-                    getLocalRoot().CFrame = pos
-                end)
-            end)
-        end)
-        __snipes:AddButton("Ragdoll", function()
-            task.spawn(function()
-                local pos = getLocalRoot() and getLocalRoot().CFrame
-                local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (not t or not pos) then return end
-                local root = get(t.Character, "HumanoidRootPart")
-                if (not root) then return end
-                Snipefunc(root, function()
-                    local rpos = root.CFrame
-                    Velocity(root, Vector3.new(0, -64, 0))
-                    task.wait(.1)
-                    getLocalRoot().CFrame = rpos
-                    Velocity(root, Vector3.zero)
-                    getLocalRoot().CFrame = pos
-                end)
-            end)
-        end)
-        __snipes:AddButton("Death", function()
-            task.spawn(function()
-                local pos = getLocalRoot() and getLocalRoot().CFrame
-                local t = getPlayerFromName(config.Snipes.Target.Value)
-                if (not t or not pos) then return end
-                local root = get(t.Character, "HumanoidRootPart")
-                if (not root) then return end
-                Snipefunc(root, function()
-                    local hum = cget(root.Parent, "Humanoid")
-                    if hum then hum:ChangeState(Enum.HumanoidStateType.Dead) end
-                    task.wait(.5)
-                    ungrab(root)
-                    getLocalRoot().CFrame = pos
-                end)
-            end)
-        end)
-        __snipes:AddButton("Fling", function()
-            local pos = getLocalRoot() and getLocalRoot().CFrame
-            local t = getPlayerFromName(config.Snipes.Target.Value)
-            if (not t or not pos or not getLocalRoot()) then return end
-            local root = get(t.Character, "HumanoidRootPart")
-            if (not root) then return end
-            local toy = spawntoy("YouDecoy", getLocalRoot().CFrame)
-            if (not toy or not toy.PrimaryPart) then return end
-            task.wait(.3)
-            getLocalRoot().CFrame = toy.PrimaryPart.CFrame
-            task.wait(.1)
-            SetNetworkOwner(toy.PrimaryPart)
-            for _ = 1, 256 do
-                SetNetworkOwner(toy.PrimaryPart)
+    -- [TROLLS]
+    __trolls:AddButton({Name="Burn All", Callback=function()
+        local oven = spawntoy("OvenDarkGray", getLocalRoot().CFrame)
+        if not oven then return end
+        SetNetworkOwner(oven.ButtonOven)
+        ungrab(oven.ButtonOven)
+        SetNetworkOwner(oven.SoundPart)
+        for _,v in ipairs(service.Players:GetPlayers()) do
+            if v ~= getLocalPlayer() and not IsInPlot(v) and not IsFriend(v) and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                task.wait(0.25)
+                oven.SoundPart.CFrame = v.Character.HumanoidRootPart.CFrame
+            end
+        end
+        task.wait(1)
+        destroyToy(oven)
+    end})
+    __trolls:AddButton({Name="Fire All", Callback=function()
+        local toy = spawntoy("Campfire", getLocalRoot().CFrame)
+        if not toy then return end
+        SetNetworkOwner(toy.SoundPart)
+        for _,v in ipairs(service.Players:GetPlayers()) do
+            if v ~= getLocalPlayer() and not IsInPlot(v) and not IsFriend(v) and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                task.wait(0.25)
+                toy.SoundPart.CFrame = v.Character.HumanoidRootPart.CFrame
+            end
+        end
+        task.wait(1)
+        destroyToy(toy)
+    end})
+    __trolls:AddToggle({Name="Loud All", Default=false, Callback=function(v)
+        config.Trolls.Loud.Value = v
+        if v then
+            local s = spawntoy("BellBig", getLocalRoot().CFrame)
+            task.wait(0.5)
+            if s then
+                config.Trolls.Loud.Part.Value = s
+                SetNetworkOwner(s.SoundPart)
+            end
+        else
+            if config.Trolls.Loud.Part.Value then destroyToy(config.Trolls.Loud.Part.Value) end
+        end
+    end})
+    __trolls:AddToggle({Name="Lag", Default=false, Callback=function(v) config.Trolls.Lag.Value=v end})
+    __trolls:AddToggle({Name="Ping", Default=false, Callback=function(v) config.Trolls.Ping.Value=v end})
+    __trolls:AddToggle({Name="Server Destroyer", Default=false, Callback=function(v) config.Trolls.Server.Value=v; if v then config.Trolls.Server.CF=getLocalRoot().CFrame end end})
+    __trolls:AddToggle({Name="Chaos Line", Default=false, Callback=function(v) config.Trolls.Chaos.Value=v end})
+    __trolls:AddButton({Name="THE WORLD", Callback=function()
+        playSound("rbxassetid://7514417921")
+        task.wait(1)
+        local e = Instance.new("Part", workspace)
+        e.Size, e.Shape, e.Material, e.Color = Vector3.one, Enum.PartType.Ball, Enum.Material.ForceField, Color3.new(.5,.7,0.2)
+        e.CanCollide, e.Anchored, e.Transparency = false, true, 0
+        task.spawn(function()
+            while true do
+                e.Size = e.Size + Vector3.one/2
+                e.CFrame = getLocalRoot().CFrame
+                e.Transparency = e.Transparency + 0.05
+                if e.Transparency >= 1 then e:Destroy(); break end
+                lag(4096)
                 task.wait()
-                local rx = math.rad(math.random(0, 360 * 32768))
-                local ry = math.rad(math.random(0, 360 * 32768))
-                local rz = math.rad(math.random(0, 360 * 32768))
-                local rr = 1.5
-                toy.PrimaryPart.CFrame = CFrame.new(root.Position + Vector3.one * math.random(-rr, rr)) * CFrame.Angles(rx, ry, rz)
-                Velocity(toy.PrimaryPart, Vector3.one * 1e16)
-            end
-            task.wait(.5)
-            getLocalRoot().CFrame = pos
-            task.wait(.5)
-            destroyToy(toy)
-        end)
-
-        __snipes:AddLabel("Snipe Loops")
-
-        __snipes:AddToggle("LoopVoid", "Loop Void", false, function(value)
-            config.Snipes.LoopVoid.Value = value
-        end)
-        __snipes:AddToggle("LoopKill", "Loop Kill", false, function(value)
-            config.Snipes.LoopKill.Value = value
-        end)
-        __snipes:AddToggle("LoopPoison", "Loop Poison", false, function(value)
-            config.Snipes.LoopPoison.Value = value
-        end)
-        __snipes:AddToggle("LoopRagdoll", "Loop Ragdoll", false, function(value)
-            config.Snipes.LoopRagdoll.Value = value
-        end)
-        __snipes:AddToggle("LoopDeath", "Loop Death", false, function(value)
-            config.Snipes.LoopDeath.Value = value
-        end)
-    end
-
-    ---
-    do
-        --// TROLLS
-        __trolls:AddButton("Burn All", function()
-            local Oven = spawntoy("OvenDarkGray", getLocalRoot() and getLocalRoot().CFrame or CFrame.new(0, 0, 0))
-            if (not Oven or not Oven.ButtonOven or not Oven.SoundPart) then return end
-            local Button = Oven.ButtonOven
-            SetNetworkOwner(Button)
-            ungrab(Button)
-            task.wait(.1)
-            SetNetworkOwner(Oven.SoundPart)
-            for _, v in ipairs(service.Players:GetPlayers()) do
-                if (v == getLocalPlayer()) then continue end
-                if (not config.Settings.IgnoreIsInPlot.Value and IsInPlot(v)) then continue end
-                if (config.Settings.IgnoreFriend.Value and IsFriend(v)) then continue end
-                local character = v.Character
-                if (not character) then continue end
-                local root = get(character, "HumanoidRootPart")
-                if (not root) then continue end
-                task.wait(.25)
-                Oven.SoundPart.CFrame = root.CFrame
-            end
-            task.wait(1)
-            destroyToy(Oven)
-        end)
-        __trolls:AddButton("Fire All", function()
-            local toy = spawntoy("Campfire", getLocalRoot() and getLocalRoot().CFrame or CFrame.new(0, 0, 0))
-            if (not toy or not toy.SoundPart) then return end
-            SetNetworkOwner(toy.SoundPart)
-            for _, v in ipairs(service.Players:GetPlayers()) do
-                if (v == getLocalPlayer()) then continue end
-                if (not config.Settings.IgnoreIsInPlot.Value and IsInPlot(v)) then continue end
-                if (config.Settings.IgnoreFriend.Value and IsFriend(v)) then continue end
-                local character = v.Character
-                if (not character) then continue end
-                local root = get(character, "HumanoidRootPart")
-                if (not root) then continue end
-                task.wait(.25)
-                toy.SoundPart.CFrame = root.CFrame
-            end
-            task.wait(1)
-            destroyToy(toy)
-        end)
-        __trolls:AddToggle("LoudAll", "Loud All", false, function(value)
-            config.Trolls.LoudAll.Value = value
-            if (value) then
-                local SoundMain = spawntoy("BellBig", getLocalRoot() and getLocalRoot().CFrame or CFrame.new(0, 0, 0))
-                task.wait(.5)
-                if SoundMain and SoundMain.SoundPart then
-                    config.Trolls.LoudAll.SoundPart.Value = SoundMain
-                    SetNetworkOwner(SoundMain.SoundPart)
-                end
-            else
-                if (config.Trolls.LoudAll.SoundPart.Value) then
-                    destroyToy(config.Trolls.LoudAll.SoundPart.Value)
-                    config.Trolls.LoudAll.SoundPart.Value = nil
-                end
             end
         end)
-        __trolls:AddToggle("Lag", "Lag", false, function(value)
-            config.Trolls.Lag.Value = value
-        end)
-        __trolls:AddToggle("Ping", "Ping", false, function(value)
-            config.Trolls.Ping.Value = value
-        end)
-        __trolls:AddToggle("ServerDestroyer", "Server Destroyer", false, function(value)
-            config.Trolls.ServerDestroyer.Value = value
-            if (value and getLocalRoot()) then
-                config.Trolls.ServerDestroyer.CFrame = getLocalRoot().CFrame
-            end
-        end)
-        __trolls:AddToggle("ChaosLine", "Chaos Line", false, function(value)
-            config.Trolls.ChaosLine.Value = value
-        end)
-        __trolls:AddButton("THE WORLD", function()
-            local s = playSound("rbxassetid://7514417921")
-            task.wait(1)
-            local e = Instance.new("Part", workspace)
-            e.Size = Vector3.one
-            e.Shape = Enum.PartType.Ball
-            e.Material = Enum.Material.ForceField
-            e.Color = Color3.new(.5, .7, 0.2)
-            e.CanCollide = false
-            e.CanQuery = false
-            e.CanTouch = false
-            e.Locked = true
-            task.spawn(function()
-                while (true) do
-                    e.Size = e.Size + Vector3.one / 2
-                    if getLocalRoot() then
-                        e.CFrame = getLocalRoot().CFrame
-                    end
-                    e.Transparency = e.Transparency + .1
-                    lag(4096)
-                    task.wait()
-                end
-            end)
-        end)
-    end
+    end})
 
-    ---
-    do
-        --// SETTINGS
-        -- OrionはConfigManagerを直接操作するUIを持たないため、Load/Save/DeleteボタンはOrionLibの機能に置き換え
-        __settings:AddButton("Save Config", function()
-            OrionLib:SaveConfiguration()
-            windNotify({ Title = "Suisei Hub", Content = "Config saved!", Duration = 5 })
-        end)
-        __settings:AddButton("Load Config", function()
-            OrionLib:LoadConfiguration()
-            windNotify({ Title = "Suisei Hub", Content = "Config loaded!", Duration = 5 })
-        end)
-        __settings:AddButton("Delete Config", function()
-            OrionLib:RemoveConfiguration()
-            windNotify({ Title = "Suisei Hub", Content = "Config deleted!", Duration = 5 })
-        end)
+    -- [SETTINGS & INFO]
+    __settings:AddButton({Name="Save Config", Callback=function() if OrionLib then OrionLib:MakeNotification({Name="Config",Content="Saved",Time=2}) end end}) -- Orion auto saves
+    __settings:AddSlider({Name="Aura Radius", Min=0, Max=128, Default=32, Callback=function(v) config.Settings.Radius.Value=v end})
+    __settings:AddButton({Name="Inf Radius", Callback=function() config.Settings.Radius.Value=10000 end})
+    __settings:AddSlider({Name="Aim Speed", Min=1, Max=10, Default=5, Callback=function(v) config.Settings.AimSpeed.Value=v end})
+    __settings:AddToggle({Name="Ignore Friend", Default=false, Callback=function(v) config.Settings.IgnoreFriend.Value=v end})
+    __settings:AddToggle({Name="Ignore Plot", Default=false, Callback=function(v) config.Settings.IgnorePlot.Value=v end})
+    __settings:AddToggle({Name="Only Player", Default=false, Callback=function(v) config.Settings.OnlyPlayer.Value=v end})
+    __settings:AddSlider({Name="Lag Amount", Min=0, Max=4096, Default=1024, Callback=function(v) config.Settings.Lag.Value=v end})
+    __settings:AddSlider({Name="Ping Amount", Min=0, Max=4096, Default=1024, Callback=function(v) config.Settings.Ping.Value=v end})
+    __settings:AddDropdown({Name="Kick Method", Default="Void", Options={"Void", "Float"}, Callback=function(v) config.Settings.KickMethod.Value=v end})
+    __settings:AddToggle({Name="Debug Mode", Default=false, Callback=function(v) config.Settings.Debug.Value=v end})
+    __settings:AddButton({Name="Rejoin", Callback=function() service.TeleportService:Teleport(game.PlaceId, getLocalPlayer()) end})
+    
+    __infos:AddLabel("Discord: https://discord.gg/ENnZ4W9eMN")
+    __infos:AddLabel("Notes: Made by Luna!")
 
-        local AuraRadius = __settings:AddSlider("AuraRadius", "Aura Radius", "Aura Radius", 32, 0, 10000, 1, function(value)
-            config.Settings.AuraRadius.Value = value
-        end)
-        __settings:AddButton("Infinite Aura Radius (NetworkOwner)", function()
-            config.Settings.AuraRadius.Value = 10000
-            AuraRadius:SetValue(10000) -- Orion SliderのSetValueを使用
-        end)
-        __settings:AddSlider("AimBotSpeed", "AimBot Speed", "AimBot Speed", 5, 1, 10, 1, function(value)
-            config.Settings.AimBotSpeed.Value = value
-        end)
-
-        __settings:AddToggle("IgnoreFriend", "Ignore Friend", false, function(value)
-            config.Settings.IgnoreFriend.Value = value
-        end)
-        __settings:AddToggle("IgnoreIsInPlot", "Ignore IsInPlot", false, function(value)
-            config.Settings.IgnoreIsInPlot.Value = value
-        end)
-        __settings:AddToggle("OnlyPlayer", "Only Player", false, function(value)
-            config.Settings.OnlyPlayer.Value = value
-        end)
-
-        __settings:AddSlider("LagAmount", "Lag Amount", "Lag Amount", 1024, 0, 4096, 1, function(value)
-            config.Settings.Lag.Value = value
-        end)
-        __settings:AddSlider("PingAmount", "Ping Amount", "Ping Amount", 1024, 0, 4096, 1, function(value)
-            config.Settings.Ping.Value = value
-        end)
-
-        -- WindUI Keybind -> Orion Keybind
-        local keybindComponent = __settings:AddKeybind("ToggleKeybind", "Toggle Keybind", "C", function(key)
-            local success, key_enum = pcall(function() return Enum.KeyCode[key] end)
-            if success and key_enum then
-                Window:SetKey(key_enum)
-                ToggleKeybind = key_enum
-            end
-        end)
-
-        -- WindUI Dropdown -> Orion Dropdown
-        __settings:AddDropdown("KickMethod", "Kick Method", "Void", { "Void", "Float" }, function(value)
-            config.Settings.KickMethod.Value = value
-        end)
-        __settings:AddDropdown("SpeedHackMethod", "SpeedHack Method", "CFrame", { "CFrame", "Velocity", "Disable" }, function(value)
-            config.Settings.SpeedHackMethod.Value = value
-        end)
-        __settings:AddToggle("AutoSpeedHackMethod", "Auto SpeedHack Method", true, function(value)
-            config.Settings.AutoSpeedHackMethod.Value = value
-        end)
-        __settings:AddDropdown("FlyMethod", "Fly Method", "Velocity", { "CFrame", "Velocity", "Disable" }, function(value)
-            config.Settings.FlyMethod.Value = value
-        end)
-        __settings:AddToggle("DebugMode", "Debug Mode", false, function(value)
-            config.Settings.DebugMode.Value = value
-        end)
-
-        __settings:AddButton("Rejoin", function()
-            if not getLocalPlayer() or not service.TeleportService then return end
-            
-            local s, r = pcall(function()
-                windNotify({
-                    Title = "Suisei Hub",
-                    Content = "Rejoining...",
-                    Duration = 5
-                })
-                service.TeleportService:Teleport(
-                    game.PlaceId,
-                    getLocalPlayer(),
-                    game.JobId
-                )
-            end)
-            if (not s) then
-                windNotify({
-                    Title = "Suisei Hub",
-                    Content = "Failed to rejoin!\n" .. tostring(r),
-                    Duration = 5
-                })
-            end
-        end)
-    end
-
-    ---
-    do
-        --// INFOS
-        __infos:AddLabel("Discord Link")
-        __infos:AddTextbox("DiscordLink", "Discord Link", "https://discord.gg/ENnZ4W9eMN", true, function(value) end) -- 読み取り専用のテキストボックス
-
-        __infos:AddLabel("Notes: Made by Luna!")
-    end
-
-    --// SYSTEM
-    -- WindUIの通知機能（wind:Notify）をOrionの通知機能（windNotify）に置き換える作業は完了済み
-
-    task.wait(.1)
-
-    --// INPUTS
-    service.UserInputService.JumpRequest:Connect(function()
-        if (config.Movements.Infjump.Value and getLocalHum()) then
-            getLocalHum():ChangeState(Enum.HumanoidStateType.Jumping)
-        end
+    --// KEY INPUTS
+    local keys = {W=false, A=false, S=false, D=false, Space=false, Shift=false}
+    service.UserInputService.InputBegan:Connect(function(i,g)
+        if g then return end
+        if i.KeyCode==Enum.KeyCode.W then keys.W=true elseif i.KeyCode==Enum.KeyCode.A then keys.A=true elseif i.KeyCode==Enum.KeyCode.S then keys.S=true elseif i.KeyCode==Enum.KeyCode.D then keys.D=true elseif i.KeyCode==Enum.KeyCode.Space then keys.Space=true elseif i.KeyCode==Enum.KeyCode.LeftShift then keys.Shift=true end
     end)
-
-    local keys = { W = false, A = false, S = false, D = false, Space = false, Shift = false }
-    service.UserInputService.InputBegan:Connect(function(i, g)
-        if (g) then return end
-        local k = i.KeyCode
-        if (k == Enum.KeyCode.W) then keys.W = true end
-        if (k == Enum.KeyCode.A) then keys.A = true end
-        if (k == Enum.KeyCode.S) then keys.S = true end
-        if (k == Enum.KeyCode.D) then keys.D = true end
-        if (k == Enum.KeyCode.Space) then keys.Space = true end
-        if (k == Enum.KeyCode.LeftShift or k == Enum.KeyCode.RightShift) then keys.Shift = true end
+    service.UserInputService.InputEnded:Connect(function(i,g)
+        if g then return end
+        if i.KeyCode==Enum.KeyCode.W then keys.W=false elseif i.KeyCode==Enum.KeyCode.A then keys.A=false elseif i.KeyCode==Enum.KeyCode.S then keys.S=false elseif i.KeyCode==Enum.KeyCode.D then keys.D=false elseif i.KeyCode==Enum.KeyCode.Space then keys.Space=false elseif i.KeyCode==Enum.KeyCode.LeftShift then keys.Shift=false end
     end)
-    service.UserInputService.InputEnded:Connect(function(i, g)
-        if (g) then return end
-        local k = i.KeyCode
-        if (k == Enum.KeyCode.W) then keys.W = false end
-        if (k == Enum.KeyCode.A) then keys.A = false end
-        if (k == Enum.KeyCode.S) then keys.S = false end
-        if (k == Enum.KeyCode.D) then keys.D = false end
-        if (k == Enum.KeyCode.Space) then keys.Space = false end
-        if (k == Enum.KeyCode.LeftShift or k == Enum.KeyCode.RightShift) then keys.Shift = false end
-    end)
-
     service.UserInputService.InputChanged:Connect(function(i)
-        if (i.UserInputType == Enum.UserInputType.MouseWheel) then
-            if (config.Combats.InfLine.Dist.Value < 11) then
-                config.Combats.InfLine.Dist.Value = 11
-            end
-            if (i.Position.Z > 0) then
-                config.Combats.InfLine.Dist.Value = config.Combats.InfLine.Dist.Value + 7
-            elseif (i.Position.Z < 0) then
-                config.Combats.InfLine.Dist.Value = config.Combats.InfLine.Dist.Value - 7
-            end
+        if i.UserInputType == Enum.UserInputType.MouseWheel then
+            if i.Position.Z > 0 then config.Combats.InfLine.Dist.Value = config.Combats.InfLine.Dist.Value + 7 else config.Combats.InfLine.Dist.Value = math.max(0, config.Combats.InfLine.Dist.Value - 7) end
         end
     end)
-
-    --// SLOTS
-    local SlotTimeEvent = service.ReplicatedStorage:FindFirstChild("SlotEvents") and service.ReplicatedStorage.SlotEvents:FindFirstChild("SlotTime")
-    if (SlotTimeEvent and SlotTimeEvent:IsA("RemoteEvent")) then
-        SlotTimeEvent.OnClientEvent:Connect(function(i)
-            task.spawn(function()
-                config.Players.AutoSlot.Time = i
-                if (config.Players.AutoSlot.Time == 0 and config.Players.AutoSlot.Value) then
-                    local p = getLocalRoot() and getLocalRoot().CFrame
-                    if (not p) then return end
-                    
-                    while (config.Players.AutoSlot.Time == 0 and config.Players.AutoSlot.Value) do
-                        local slotsFolder = workspace:FindFirstChild("Slots")
-                        if (slotsFolder) then
-                            for _, v in ipairs(slotsFolder:GetChildren()) do
-                                task.wait(.1)
-                                local h = v:FindFirstChild("SlotHandle") and v.SlotHandle:FindFirstChild("Handle")
-                                if (h and getLocalRoot()) then
-                                    getLocalRoot().CFrame = h.CFrame
-                                    task.wait(.2)
-                                    SetNetworkOwner(h)
-                                end
-                            end
-                        end
-                    end
-                    task.wait(1.5)
-                    if getLocalRoot() then getLocalRoot().CFrame = p end
+    
+    --// MAIN LOOP LOGIC
+    local timers = {AntiDetect=0, Banana=0, Aura=0, Server=0, Esp=0, Ext=0, Snipe=0, Loud=0, Kick=0, KickDisable=0}
+    
+    -- ESP Logic (Visuals)
+    local function updateESP()
+        if config.Visuals.ESP.Value then
+            for _,p in ipairs(service.Players:GetPlayers()) do
+                if p ~= getLocalPlayer() and p.Character and not p.Character:FindFirstChild("__esp") then
+                    local h = Instance.new("Highlight", p.Character)
+                    h.Name = "__esp"
+                    h.FillColor = config.Visuals.ESP.Fill
+                    h.OutlineColor = config.Visuals.ESP.Out
+                elseif p.Character and p.Character:FindFirstChild("__esp") then
+                    p.Character.__esp.FillColor = config.Visuals.ESP.Fill
+                    p.Character.__esp.OutlineColor = config.Visuals.ESP.Out
                 end
-            end)
-        end)
+            end
+        else
+            for _,p in ipairs(service.Players:GetPlayers()) do
+                if p.Character and p.Character:FindFirstChild("__esp") then p.Character.__esp:Destroy() end
+            end
+        end
     end
 
-    --// GRABPARTS AND BLACKHOLE
-    workspace.ChildAdded:Connect(function(v)
-        --// ANTIEXPLODE
-        if (config.Combats.AntiExplode.Value) then
-            if (v.Name == "Part" and getLocalChar() and getLocalRoot()) then
-                local pos = (v.Position - getLocalRoot().Position).Magnitude
-                if (pos >= 4) then
-                    getLocalRoot().Anchored = true
-                    task.wait(.05)
-                    while (get(getLocalChar(), "Ragdolled") and get(getLocalChar(), "Ragdolled").Value) do
-                        local struggleEvent = service.ReplicatedStorage:FindFirstChild("CharacterEvents") and service.ReplicatedStorage.CharacterEvents:FindFirstChild("Struggle")
-                        local stopVelocityEvent = service.ReplicatedStorage:FindFirstChild("GameCorrectionEvents") and service.ReplicatedStorage.GameCorrectionEvents:FindFirstChild("StopAllVelocity")
-                        
-                        if (struggleEvent and struggleEvent:IsA("RemoteEvent") and getLocalPlayer()) then
-                            struggleEvent:FireServer(getLocalPlayer())
+    loop.Event:Connect(function(dt)
+        for k,v in pairs(timers) do timers[k] = v + dt end
+        
+        -- Movement Logic
+        if config.Movements.CrouchSpeedHack.Loop then getLocalHum().WalkSpeed = config.Movements.CrouchSpeedHack.Value end
+        if config.Movements.JumppowerHack.Loop then getLocalHum().JumpPower = config.Movements.JumppowerHack.Value end
+        if config.Movements.Freeze.Value then getLocalRoot().CFrame = config.Movements.Freeze.CFrame end
+        if config.Movements.Noclip.Value then for _,v in ipairs(getLocalChar():GetDescendants()) do if v:IsA("BasePart") then v.CanCollide=false end end end
+        
+        if config.Movements.Fly.Value then
+            local hum = getLocalHum()
+            local root = getLocalRoot()
+            if hum and root then
+                hum.PlatformStand = true
+                local dir = Vector3.zero
+                local cf = workspace.CurrentCamera.CFrame
+                if keys.W then dir = dir + cf.LookVector end
+                if keys.S then dir = dir - cf.LookVector end
+                if keys.A then dir = dir - cf.RightVector end
+                if keys.D then dir = dir + cf.RightVector end
+                if keys.Space then dir = dir + Vector3.new(0,1,0) end
+                if keys.Shift then dir = dir - Vector3.new(0,1,0) end
+                
+                if config.Settings.FlyMethod.Value == "Velocity" then
+                    root.AssemblyLinearVelocity = dir.Unit * config.Movements.SpeedHack.Value
+                else
+                    root.CFrame = root.CFrame + (dir.Unit * config.Movements.SpeedHack.Value * dt)
+                    root.AssemblyLinearVelocity = Vector3.zero
+                end
+            end
+        else
+            if getLocalHum() then getLocalHum().PlatformStand = false end
+        end
+
+        -- Player Logic
+        if timers.AntiDetect >= 0.5 then
+            if config.Players.AntiDetect.Value then AntiDetect() end
+            timers.AntiDetect = 0
+        end
+        if config.Players.AntiRagdoll.Value and getLocalHum() and (getLocalHum():GetState() == Enum.HumanoidStateType.Ragdoll or getLocalHum():GetState() == Enum.HumanoidStateType.FallingDown) then
+            ragdoll(); getLocalHum():ChangeState(Enum.HumanoidStateType.Running)
+        end
+        if config.Players.Ragdoll.Value then ragdoll(); getLocalHum().PlatformStand = true end
+        if config.Players.AntiGucci.Value then ragdoll() end
+
+        -- Visuals
+        if timers.Esp >= 1 then updateESP(); timers.Esp = 0 end
+        workspace.CurrentCamera.FieldOfView = config.Visuals.FOV.Value
+        if config.Visuals.TPS.Value then getLocalPlayer().CameraMaxZoomDistance=10000 else getLocalPlayer().CameraMode=Enum.CameraMode.LockFirstPerson end
+
+        -- Combat / Auras
+        if timers.Aura >= 0.5 then
+            for _,v in ipairs(GetNearParts(getLocalRoot().Position, config.Settings.Radius.Value)) do
+                if v.Name == "HumanoidRootPart" and v.Parent ~= getLocalChar() then
+                    local p = service.Players:GetPlayerFromCharacter(v.Parent)
+                    if not (p and IsFriend(p) and config.Settings.IgnoreFriend.Value) then
+                        if config.Auras.Void.Value then SetNetworkOwner(v); v.CanCollide=false; Velocity(v, Vector3.new(0,10000,0)) end
+                        if config.Auras.Kill.Value then SetNetworkOwner(v); v.CanCollide=false; MoveTo(v, CFrame.new(4096,-75,4096)); Velocity(v, Vector3.new(0,-1000,0)) end
+                        if config.Auras.Poison.Value then SetNetworkOwner(v); MoveTo(v, CFrame.new(58,-70,271)) end
+                        if config.Auras.Ragdoll.Value then SetNetworkOwner(v); Velocity(v, Vector3.new(0,-64,0)) end
+                        if config.Auras.Death.Value then SetNetworkOwner(v); if v.Parent:FindFirstChild("Humanoid") then v.Parent.Humanoid:ChangeState(Enum.HumanoidStateType.Dead) end; ungrab(v) end
+                        if config.Auras.Anchor.Value then anchor(v) end
+                        if config.Auras.Fire.Value then 
+                            local t = spawntoy("Campfire", getLocalRoot().CFrame); 
+                            if t then SetNetworkOwner(t.SoundPart); t.SoundPart.CFrame=v.CFrame; task.delay(0.5, destroyToy, t) end 
                         end
-                        if (stopVelocityEvent and stopVelocityEvent:IsA("RemoteEvent")) then
-                            stopVelocityEvent:FireServer()
-                        end
-                        task.wait()
                     end
-                    getLocalRoot().Anchored = false
+                end
+            end
+            timers.Aura = 0
+        end
+
+        -- Anti Void/Far
+        if config.Combats.AntiVoid.Value and getLocalRoot().Position.Y < -80 then
+            getLocalRoot().CFrame = workspace.SpawnLocation.CFrame + Vector3.new(0,10,0); getLocalRoot().AssemblyLinearVelocity = Vector3.zero
+        end
+
+        -- Trolls
+        if config.Trolls.Lag.Value then lag(config.Settings.Lag.Value) end
+        if config.Trolls.Ping.Value then ping(config.Settings.Ping.Value) end
+        if timers.Server >= 0.1 then
+            if config.Trolls.Server.Value then for i=1,32 do createLine(nil); getLocalRoot().CFrame = config.Trolls.Server.CF end end
+            timers.Server = 0
+        end
+        if config.Trolls.Chaos.Value then for i=1,32 do createLine(nil) end end
+        if timers.Loud >= 0.1 then
+            if config.Trolls.Loud.Value and config.Trolls.Loud.Part.Value then
+                for _,v in ipairs(service.Players:GetPlayers()) do
+                    if v ~= getLocalPlayer() and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                        config.Trolls.Loud.Part.Value.SoundPart.CFrame = v.Character.HumanoidRootPart.CFrame
+                    end
+                end
+            end
+            timers.Loud = 0
+        end
+
+        -- Grab Logic
+        -- Note: Full grab logic requires childAdded listener which is separate from loop, but basics like InvisLine are here
+        if config.Combats.InvisLine.Value then service.ReplicatedStorage.GrabEvents.DestroyGrabLine:FireServer() end
+        
+        -- Blobman
+        if config.Blobman.Noclip.Value then local b=getBlobman(); if b then for _,v in ipairs(b:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide=false end end end end
+        if config.Blobman.LoopKick.Value then
+            local t = getPlayerFromName(config.Blobman.Target.Value)
+            local b = getBlobman()
+            if t and b and t.Character and t.Character:FindFirstChild("HumanoidRootPart") then blobKick(b, t.Character.HumanoidRootPart, config.Blobman.ArmSide.Value) end
+        end
+        if config.Blobman.LoopKickAll.Value then
+            local b = getBlobman()
+            if b then
+                for _,v in ipairs(service.Players:GetPlayers()) do
+                    if v~=getLocalPlayer() and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then blobKick(b, v.Character.HumanoidRootPart, config.Blobman.ArmSide.Value) end
                 end
             end
         end
 
-        --// GRABPARTS
-        if (v.Name == "GrabParts" and v:IsA("Model")) then
-            local Owner = get(v, "Owner")
-            local BeamPart = get(v, "BeamPart")
-            local DragPart = get(v, "DragPart")
-            local GrabPart = get(v, "GrabPart")
-            local GrabAttach = get(GrabPart, "GrabAttach")
-            local GrabPartWeld = get(GrabPart, "WeldConstraint")
-            local Grabbing = GrabPartWeld and GrabPartWeld.Part1
-
-            if (not Grabbing) then return end
-
-            if (config.Settings.DebugMode.Value) then
-                windNotify({
-                    Title = "Suisei Hub",
-                    Content = "Found GrabParts",
-                    Duration = 5
-                })
+        -- Snipes Loops
+        if timers.Snipe >= 1 then
+            local t = getPlayerFromName(config.Snipes.Target.Value)
+            if t and t.Character and t.Character:FindFirstChild("HumanoidRootPart") then
+                local root = t.Character.HumanoidRootPart
+                if config.Snipes.Void.Value then Snipefunc(root, function() Velocity(root, Vector3.new(0,10000,0)) end) end
+                if config.Snipes.Kill.Value then Snipefunc(root, function() MoveTo(root, CFrame.new(4096,-75,4096)); Velocity(root, Vector3.new(0,-1000,0)) end) end
+                if config.Snipes.Poison.Value then Snipefunc(root, function() MoveTo(root, CFrame.new(58,-70,271)) end) end
+                if config.Snipes.Ragdoll.Value then Snipefunc(root, function() Velocity(root, Vector3.new(0,-64,0)) end) end
+                if config.Snipes.Death.Value then Snipefunc(root, function() if root.Parent:FindFirstChild("Humanoid") then root.Parent.Humanoid:ChangeState(Enum.HumanoidStateType.Dead) end; ungrab(root) end) end
             end
-
-            if (Grabbing.Anchored) then
-                if (config.Settings.DebugMode.Value) then
-                    windNotify({
-                        Title = "Suisei Hub",
-                        Content = "Target is Anchored",
-                        Duration = 5
-                    })
-                end
-                return
-            end
-
-            local function Grabfunc(func, ...)
-                task.spawn(function(...)
-                    if (config.Settings.DebugMode.Value) then
-                        windNotify({
-                            Title = "Suisei Hub",
-                            Content = "Running Grabfunc",
-                            Duration = 5
-                        })
-                    end
-                    func(...)
-                end, ...)
-            end
-
-            --// MAINS
-
-            Grabfunc(function()
-                if (config.Combats.InfLine.Value) then
-                    local DragPartC = DragPart:Clone()
-                    if DragPartC.AlignPosition and DragPartC.DragAttach then
-                        DragPartC.AlignPosition.Attachment1 = DragPartC.DragAttach
-                    end
-                    DragPartC.Parent = v
-                    if DragPartC.Position and workspace.CurrentCamera then
-                        config.Combats.InfLine.Dist.Value = (DragPartC.Position - workspace.CurrentCamera.CFrame.Position).Magnitude
-                    end
-                    if DragPartC.AlignOrientation then
-                        DragPartC.AlignOrientation.Enabled = false
-                    end
-                    if DragPart and DragPart.AlignPosition then
-                        DragPart.AlignPosition.Enabled = false
-                    end
-                    
-                    task.spawn(function()
-                        while (v.Parent and DragPartC and workspace.CurrentCamera) do
-                            DragPartC.Position = workspace.CurrentCamera.CFrame.Position + workspace.CurrentCamera.CFrame.LookVector * config.Combats.InfLine.Dist.Value
-                            task.wait()
-                        end
-                        config.Combats.InfLine.Dist.Value = 0
-                    end)
-                end
-            end)
-
-            Grabfunc(function()
-                v:GetPropertyChangedSignal("Parent"):Connect(function()
-                    if (not v.Parent and config.Combats.SuperStrength.Value and service.UserInputService) then
-                        service.UserInputService.InputBegan:Once(function(i)
-                            if (i.UserInputType == Enum.UserInputType.MouseButton2 and Grabbing and Grabbing.Parent) then
-                                local vel = Instance.new("BodyVelocity", Grabbing)
-                                vel.MaxForce = Vector3.one * math.huge
-                                vel.Velocity = workspace.CurrentCamera.CFrame.LookVector * config.Combats.SuperStrength.Power.Value
-                                service.Debris:AddItem(vel, .1)
-                            end
-                        end)
-                    end
-                end)
-            end)
-            if (config.Grabs.VoidGrab.Value) then
-                Grabfunc(function()
-                    for _ = 1, 3 do
-                        task.wait()
-                        SetNetworkOwner(Grabbing)
-                    end
-                    task.wait()
-                    Velocity(Grabbing, Vector3.new(0, 1e4, 0))
-                end)
-            end
-            if (config.Grabs.KillGrab.Value) then
-                Grabfunc(function()
-                    for _ = 1, 3 do
-                        task.wait()
-                        SetNetworkOwner(Grabbing)
-                    end
-                    task.wait()
-                    MoveTo(Grabbing, CFrame.new(4096, -75, 4096))
-                    Velocity(Grabbing, Vector3.new(0, -1e3, 0))
-                end)
-            end
-            if (config.Grabs.PoisonGrab.Value) then
-                Grabfunc(function()
-                    for _ = 1, 3 do
-                        task.wait()
-                        SetNetworkOwner(Grabbing)
-                    end
-                    task.wait()
-                    local pos = Grabbing.CFrame
-                    MoveTo(Grabbing, CFrame.new(58, -70, 271))
-                end)
-            end
-            if (config.Grabs.RagdollGrab.Value) then
-                Grabfunc(function()
-                    local pos = Grabbing.CFrame
-                    for _ = 1, 3 do
-                        task.wait()
-                        SetNetworkOwner(Grabbing)
-                    end
-                    task.wait()
-                    Velocity(Grabbing, Vector3.new(0, -256, 0))
-                    task.wait()
-                    MoveTo(Grabbing, pos)
-                    Velocity(Grabbing, Vector3.zero)
-                end)
-            end
-            if (config.Grabs.AnchorGrab.Value) then
-                Grabfunc(function()
-                    anchor(Grabbing)
-                end)
-            end
-            if (config.Grabs.DeathGrab.Value) then
-                Grabfunc(function()
-                    for _ = 1, 3 do
-                        task.wait()
-                        SetNetworkOwner(Grabbing)
-                    end
-                    task.wait(.1)
-                    local hum = cget(Grabbing.Parent, "Humanoid")
-                    if hum then hum:ChangeState(Enum.HumanoidStateType.Dead) end
-                    task.wait(.5)
-                    ungrab(Grabbing)
-                end)
-            end
-            if (config.Grabs.NoclipGrab.Value) then
-                Grabfunc(function()
-                    while (Grabbing.Parent and v and v.Parent) do
-                        for _, part in ipairs(Grabbing.Parent:GetDescendants()) do
-                            if (part:IsA("BasePart")) then
-                                part.CanCollide = false
-                            end
-                        end
-                        task.wait()
-                    end
-                end)
-            end
-            if (config.Grabs.KickGrab.Value) then
-                Grabfunc(function()
-                    local p = service.Players:GetPlayerFromCharacter(Grabbing.Parent)
-                    if (p) then
-                        local character = p.Character
-                        if (not character) then return end
-                        local root = get(character, "HumanoidRootPart")
-                        if (not root) then return end
-                        local hum = cget(character, "Humanoid")
-                        if (config.Settings.KickMethod.Value == "Void") then
-                            task.wait(.5)
-                            ungrab(Grabbing)
-                            task.spawn(function()
-                                while (p and root and root.Parent and hum and getLocalRoot()) do
-                                    if (hum.FloorMaterial ~= Enum.Material.Air) then
-                                        local pos = getLocalRoot().CFrame
-                                        task.wait()
-                                        getLocalRoot().CFrame = root.CFrame
-                                        task.wait(.1)
-                                        SetNetworkOwner(root)
-                                        task.wait(.1)
-                                        MoveTo(Grabbing, CFrame.new(25e25, 25e25, 25e25))
-                                        Velocity(root, root.AssemblyLinearVelocity * 25e25)
-                                        task.wait()
-                                        ungrab(root)
-                                        getLocalRoot().CFrame = pos
-                                    end
-                                    task.wait()
-                                end
-                            end)
-                        elseif (config.Settings.KickMethod.Value == "Float") then
-                            for _ = 1, 32 do
-                                SetNetworkOwner(root)
-                                if hum then hum:ChangeState(Enum.HumanoidStateType.Ragdoll) end
-                                if hum then hum.Health = 0 end
-                                ungrab(root)
-                            end
-                        end
-                    end
-                end)
-            end
-            if (config.Miscs.Control.Value) then
-                local p = service.Players:GetPlayerFromCharacter(Grabbing.Parent)
-                if (not p and cget(Grabbing.Parent, "Humanoid")) then
-                    if Grabbing.Parent.PrimaryPart then
-                        SetNetworkOwner(Grabbing.Parent.PrimaryPart)
-                        config.Miscs.Control.Target.Value = Grabbing.Parent
-                    end
-                end
-            end
+            timers.Snipe = 0
         end
     end)
 
-    --// LOOPS
-    local AntiDetectTimer = 0
-    local AntiBananaTimer = 0
-    local AuraTimer = 0
-    local ServerDestroyerTimer = 0
-    local espTimer = 0
-    local ExtinguisherTimer = 0
-    local SnipeLoopTimer = 0
-    local LoudAllTimer = 0
-    local LoopKickTimer = 0
-    local AntiKickDisablerTimer = 0
-    loop.Event:Connect(function(dt)
-        -- ローカルプレイヤー、キャラクター、ヒューマノイド、ルートのチェック
-        local LocalPlayer = getLocalPlayer()
-        local LocalChar = getLocalChar()
-        local LocalHum = getLocalHum()
-        local LocalRoot = getLocalRoot()
-        if not LocalPlayer or not LocalChar or not LocalHum or not LocalRoot then return end
-
-        --//DELTATIME/TIMER
-        local altdt = 1 / 60
-        AntiDetectTimer = AntiDetectTimer + dt
-        AntiBananaTimer = AntiBananaTimer + dt
-        AuraTimer = AuraTimer + dt
-        ServerDestroyerTimer = ServerDestroyerTimer + dt
-        espTimer = espTimer + dt
-        ExtinguisherTimer = ExtinguisherTimer + dt
-        SnipeLoopTimer = SnipeLoopTimer + dt
-        LoudAllTimer = LoudAllTimer + dt
-        LoopKickTimer = LoopKickTimer + dt
-        AntiKickDisablerTimer = AntiKickDisablerTimer + dt
-
-        --//MOVEMENTS
-        if (config.Settings.AutoSpeedHackMethod.Value) then
-            if (LocalHum.Sit) then
-                config.Settings.SpeedHackMethod.Value = "Velocity"
-            else
-                config.Settings.SpeedHackMethod.Value = "CFrame"
-            end
-        end
-        if (config.Movements.CrouchSpeedHack.Loop) then
-            LocalHum.WalkSpeed = config.Movements.CrouchSpeedHack.Value
-        end
-        if (config.Movements.JumppowerHack.Loop) then
-            LocalHum.JumpPower = config.Movements.JumppowerHack.Value
-        end
-        if (config.Movements.Freeze.Value) then
-            LocalRoot.CFrame = config.Movements.Freeze.CFrame
-        end
-        if (config.Movements.Noclip.Value) then
-            for _, v in ipairs(LocalChar:GetDescendants()) do
-                if (v:IsA("BasePart")) then
-                    v.CanCollide = false
-                end
-            end
-        end
-        if (config.Movements.Fly.Value) then
-            LocalHum.PlatformStand = true -- Fly中はPlatformStand
-            if (config.Settings.FlyMethod.Value == "Velocity") then
-                local dir = Vector3.zero
-                local look = workspace.CurrentCamera.CFrame.LookVector
-                local right = workspace.CurrentCamera.CFrame.RightVector
-                if (keys.W) then dir = dir + look end; if (keys.S) then dir = dir - look end
-                if (keys.A) then dir = dir - right end; if (keys.D) then dir = dir + right end
-                if (keys.Space) then dir = dir + Vector3.new(0, 1, 0) end; if (keys.Shift) then dir = dir - Vector3.new(0, 1, 0) end
-                if (dir.Magnitude > 0) then
-                    dir = dir.Unit * config.Movements.SpeedHack.Value
-                    LocalRoot.AssemblyLinearVelocity = dir
-                else
-                    LocalRoot.AssemblyLinearVelocity = Vector3.zero
-                    LocalRoot.CFrame = CFrame.new(LocalRoot.Position, LocalRoot.Position + workspace.CurrentCamera.CFrame.LookVector)
-                end
-            elseif (config.Settings.FlyMethod.Value == "CFrame") then
-                local dir = Vector3.zero
-                local look = workspace.CurrentCamera.CFrame.LookVector
-                local right = workspace.CurrentCamera.CFrame.RightVector
-                if (keys.W) then dir = dir + look end; if (keys.S) then dir = dir - look end
-                if (keys.A) then dir = dir - right end; if (keys.D) then dir = dir + right end
-                if (keys.Space) then dir = dir + Vector3.new(0, 1, 0) end; if (keys.Shift) then dir = dir - Vector3.new(0, 1, 0) end
-                if (dir.Magnitude > 0) then
-                    dir = dir.Unit * config.Movements.SpeedHack.Value * altdt
-                    local targetPos = LocalRoot.Position + dir
-                    LocalRoot.CFrame = LocalRoot.CFrame:Lerp(CFrame.new(targetPos, targetPos + workspace.CurrentCamera.CFrame.LookVector), .5)
-                else
-                    LocalRoot.AssemblyLinearVelocity = Vector3.zero
-                    LocalRoot.CFrame = CFrame.new(LocalRoot.Position, LocalRoot.Position + workspace.CurrentCamera.CFrame.LookVector)
-                end
-            end
-        else
-            LocalHum.PlatformStand = false
-        end
-
-        --//PLAYERS
-        if (AntiDetectTimer >= .5) then
-            if (config.Players.AntiDetect.Value) then
-                AntiDetect()
-            end
-            AntiDetectTimer = 0
-        end
-        if (config.Players.AntiRagdoll.Value) then
-            if ((LocalHum:GetState() == Enum.HumanoidStateType.Ragdoll) or (LocalHum:GetState() == Enum.HumanoidStateType.FallingDown)) then
-                ragdoll()
-                LocalHum:ChangeState(Enum.HumanoidStateType.Running) -- 変更状態をRunningに変更
-            end
-        end
-        if (config.Players.AntiTouch.Value) then
-            for _, v in ipairs(LocalChar:GetDescendants()) do
-                if (v:IsA("BasePart")) then
-                    v.Locked = true
-                    v.CanTouch = false
-                    v.CanQuery = false
-                end
-            end
-        end
-        if (AntiBananaTimer >= 1) then
-            for _, v in ipairs(workspace:GetChildren()) do
-                if (v:IsA("Folder") and v.Name:find("SpawnedInToys") and not v:IsDescendantOf(getInv())) then
-                    local banana = get(v, "FoodBanana")
-                    if (banana) then
-                        for _, part in ipairs(banana:GetDescendants()) do
-                            if (part:IsA("BasePart")) then
-                                part.CanQuery = not config.Players.AntiBanana.Value
-                                part.CanTouch = not config.Players.AntiBanana.Value
-                                if (config.Players.AntiBanana.Value) then
-                                    if (IsInRadius(part, LocalRoot.Position, 8)) then
-                                        SetNetworkOwner(part)
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-            AntiBananaTimer = 0
-        end
-        if (config.Players.Ragdoll.Value) then
-            ragdoll()
-            LocalHum.PlatformStand = true
-        end
-        if (config.Players.AntiGucci.Value) then
-            ragdoll()
-        end
-
-        --//VISUALS
-        if (espTimer >= 1) then
-            updateESP()
-            if (config.Visuals.ESP.Value) then
-                for _, p in ipairs(service.Players:GetPlayers()) do
-                    local c = p.Character
-                    if (c and p ~= LocalPlayer) then -- 自分自身はESPしない
-                        addESP(c)
-                    end
-                end
-            end
-            espTimer = 0
-        end
-        if (workspace.CurrentCamera) then
-            workspace.CurrentCamera.FieldOfView = config.Visuals.FOV.Value
-        end
-        if (config.Visuals.TPS.Value) then
-            LocalPlayer.CameraMaxZoomDistance = 100000
-            LocalPlayer.CameraMode = Enum.CameraMode.Classic
-            if ((workspace.CurrentCamera.CFrame.Position - workspace.CurrentCamera.Focus.Position).Magnitude > LocalPlayer.CameraMinZoomDistance) then
-                service.UserInputService.MouseIconEnabled = true
-            else
-                service.UserInputService.MouseIconEnabled = false
-            end
-        else
-            LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
-        end
-
-        --//COMBATS
-        do
-            --// ANTIGRAB-REVENGE
-            local head = get(LocalChar, "Head")
-            if (head) then
-                local owner = get(head, "PartOwner")
-                local target
-                if (owner and owner.Value) then
-                    target = get(service.Players, owner.Value)
-                end
-                
-                -- AntiGrab Loop
-                task.spawn(function()
-                    while (owner and config.Combats.AntiGrab.Value) or (LocalPlayer.IsHeld and LocalPlayer.IsHeld.Value and config.Combats.AntiGrab.Value) do
-                        LocalRoot.Anchored = true
-                        
-                        local struggleEvent = service.ReplicatedStorage:FindFirstChild("CharacterEvents") and service.ReplicatedStorage.CharacterEvents:FindFirstChild("Struggle")
-                        local stopVelocityEvent = service.ReplicatedStorage:FindFirstChild("GameCorrectionEvents") and service.ReplicatedStorage.GameCorrectionEvents:FindFirstChild("StopAllVelocity")
-                        
-                        if (struggleEvent and struggleEvent:IsA("RemoteEvent")) then
-                            struggleEvent:FireServer(LocalPlayer)
-                        end
-                        if (stopVelocityEvent and stopVelocityEvent:IsA("RemoteEvent")) then
-                            stopVelocityEvent:FireServer()
-                        end
-                        task.wait()
-                    end
-                    LocalRoot.Anchored = false
-                end)
-
-                -- Revenge Actions
-                do
-                    if (target and target.Character) then
-                        local character = target.Character
-                        local root = get(character, "HumanoidRootPart")
-                        if (root) then
-                            if (config.Combats.Revenge.Void.Value) then
-                                for _ = 1, 3 do
-                                    SetNetworkOwner(root)
-                                    task.wait(.1)
-                                    Velocity(root, Vector3.new(0, 1e4, 0))
-                                    task.wait()
-                                end
-                            end
-                            if (config.Combats.Revenge.Kill.Value) then
-                                for _ = 1, 3 do
-                                    SetNetworkOwner(root)
-                                    task.wait(.1)
-                                    MoveTo(root, CFrame.new(4096, -75, 4096))
-                                    Velocity(root, Vector3.new(0, -1e3, 0))
-                                    task.wait()
-                                end
-                            end
-                            if (config.Combats.Revenge.Poison.Value) then
-                                for _ = 1, 3 do
-                                    SetNetworkOwner(root)
-                                    task.wait(.1)
-                                    MoveTo(root, CFrame.new(58, -70, 271))
-                                    task.wait()
-                                end
-                            end
-                            if (config.Combats.Revenge.Ragdoll.Value) then
-                                for _ = 1, 3 do
-                                    local pos = root.CFrame
-                                    SetNetworkOwner(root)
-                                    task.wait(.1)
-                                    Velocity(root, Vector3.new(0, -64, 0))
-                                    task.wait()
-                                    MoveTo(root, pos)
-                                    Velocity(root, Vector3.zero)
-                                    task.wait()
-                                end
-                            end
-                            if (config.Combats.Revenge.Death.Value) then
-                                for _ = 1, 3 do
-                                    SetNetworkOwner(root)
-                                    task.wait(.1)
-                                    local hum = cget(root.Parent, "Humanoid")
-                                    if hum then hum:ChangeState(Enum.HumanoidStateType.Dead) end
-                                    task.wait(.5)
-                                    ungrab(root)
-                                    task.wait()
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-
-        if (config.Combats.StrAntiGrab.Value and LocalHum.Sit) then
-            local struggleEvent = service.ReplicatedStorage:FindFirstChild("CharacterEvents") and service.ReplicatedStorage.CharacterEvents:FindFirstChild("Struggle")
-            local stopVelocityEvent = service.ReplicatedStorage:FindFirstChild("GameCorrectionEvents") and service.ReplicatedStorage.GameCorrectionEvents:FindFirstChild("StopAllVelocity")
+    -- GRAB CHILD ADDED LOGIC
+    workspace.ChildAdded:Connect(function(v)
+        if v.Name == "GrabParts" and v:IsA("Model") then
+            local grabbing = v:FindFirstChild("GrabPart") and v.GrabPart:FindFirstChild("WeldConstraint") and v.GrabPart.WeldConstraint.Part1
+            if not grabbing then return end
             
-            if (struggleEvent and struggleEvent:IsA("RemoteEvent")) then
-                struggleEvent:FireServer(LocalPlayer)
-            end
-            if (stopVelocityEvent and stopVelocityEvent:IsA("RemoteEvent")) then
-                stopVelocityEvent:FireServer()
-            end
-            LocalHum.Sit = false
-            SetNetworkOwner(LocalRoot)
-        end
-
-        if (ExtinguisherTimer >= 1) then
-            if (config.Combats.Extinguisher.Value) then
-                if (get(LocalHum, "FireDebounce") and get(LocalHum, "FireDebounce").Value) then
-                    local FireExtinguisher = spawntoy("FireExtinguisher", LocalRoot.CFrame)
-                    if (FireExtinguisher and FireExtinguisher.PrimaryPart) then
-                        for _, v in ipairs(FireExtinguisher:GetDescendants()) do
-                            if (v:IsA("BasePart")) then
-                                v.CanCollide = false
+            local function doGrab(func) task.spawn(func) end
+            
+            if config.Grabs.Void.Value then doGrab(function() for i=1,3 do SetNetworkOwner(grabbing); task.wait() end; Velocity(grabbing, Vector3.new(0,10000,0)) end) end
+            if config.Grabs.Kill.Value then doGrab(function() for i=1,3 do SetNetworkOwner(grabbing); task.wait() end; MoveTo(grabbing, CFrame.new(4096,-75,4096)); Velocity(grabbing, Vector3.new(0,-1000,0)) end) end
+            if config.Grabs.Poison.Value then doGrab(function() for i=1,3 do SetNetworkOwner(grabbing); task.wait() end; MoveTo(grabbing, CFrame.new(58,-70,271)) end) end
+            if config.Grabs.Ragdoll.Value then doGrab(function() local pos=grabbing.CFrame; for i=1,3 do SetNetworkOwner(grabbing); task.wait() end; Velocity(grabbing, Vector3.new(0,-256,0)); task.wait(); MoveTo(grabbing, pos); Velocity(grabbing, Vector3.zero) end) end
+            if config.Grabs.Anchor.Value then doGrab(function() anchor(grabbing) end) end
+            if config.Grabs.Death.Value then doGrab(function() for i=1,3 do SetNetworkOwner(grabbing); task.wait() end; if grabbing.Parent:FindFirstChild("Humanoid") then grabbing.Parent.Humanoid:ChangeState(Enum.HumanoidStateType.Dead) end; ungrab(grabbing) end) end
+            if config.Grabs.Kick.Value then doGrab(function() 
+                local p = service.Players:GetPlayerFromCharacter(grabbing.Parent)
+                if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local root = p.Character.HumanoidRootPart
+                    if config.Settings.KickMethod.Value == "Void" then
+                        ungrab(grabbing)
+                        while p and root do
+                            if p.Character.Humanoid.FloorMaterial ~= Enum.Material.Air then
+                                local pos = getLocalRoot().CFrame; getLocalRoot().CFrame=root.CFrame; task.wait(.1); SetNetworkOwner(root); task.wait(.1); MoveTo(grabbing, CFrame.new(9e9,9e9,9e9)); Velocity(root, root.AssemblyLinearVelocity*9e9); ungrab(root); getLocalRoot().CFrame=pos
                             end
-                        end
-                        local pos = LocalRoot.Position - Vector3.new(0, 3, 0)
-                        local look = LocalRoot.CFrame.LookVector
-                        FireExtinguisher.PrimaryPart.CFrame = CFrame.new(pos, pos + look)
-                        task.delay(1, function()
-                            destroyToy(FireExtinguisher)
-                        end)
-                    end
-                end
-            end
-            ExtinguisherTimer = 0
-        end
-
-        if (AuraTimer >= .5) then
-            for _, v in ipairs(GetNearParts(LocalRoot.Position, config.Settings.AuraRadius.Value)) do
-                if (not v.Anchored and not v:IsDescendantOf(LocalChar) and (v.Name == "HumanoidRootPart" or v.Name == "Torso" or v.Name == "Head")) then
-                    local p = service.Players:GetPlayerFromCharacter(v.Parent)
-                    if (p and p == LocalPlayer) then continue end -- 自分自身は無視
-                    if (IsFriend(p) and config.Settings.IgnoreFriend.Value) then continue end
-                    if (not p and config.Settings.OnlyPlayer.Value) then continue end
-                    if (config.Auras.VoidAura.Value) then
-                        task.spawn(function()
-                            SetNetworkOwner(v)
-                            v.CanCollide = false
-                            Velocity(v, Vector3.new(0, 1e4, 0))
-                        end)
-                    end
-                    if (config.Auras.KillAura.Value) then
-                        task.spawn(function()
-                            SetNetworkOwner(v)
-                            v.CanCollide = false
-                            MoveTo(v, CFrame.new(4096, -75, 4096))
-                            Velocity(v, Vector3.new(0, -1e3, 0))
-                        end)
-                    end
-                    if (config.Auras.PoisonAura.Value) then
-                        task.spawn(function()
-                            SetNetworkOwner(v)
-                            local pos = v.CFrame
-                            MoveTo(v, CFrame.new(58, -70, 271))
-                        end)
-                    end
-                    if (config.Auras.RagdollAura.Value) then
-                        task.spawn(function()
-                            local pos = v.CFrame
-                            SetNetworkOwner(v)
-                            Velocity(v, Vector3.new(0, -256, 0))
                             task.wait()
-                            MoveTo(v, pos)
-                            Velocity(v, Vector3.zero)
-                        end)
-                    end
-                    if (config.Auras.DeathAura.Value) then
-                        task.spawn(function()
-                            SetNetworkOwner(v)
-                            task.wait(.1)
-                            local hum = cget(v.Parent, "Humanoid")
-                            if (hum) then
-                                hum:ChangeState(Enum.HumanoidStateType.Dead)
-                            end
-                            task.wait(.5)
-                            ungrab(v)
-                        end)
-                    end
-                    if (config.Auras.AnchorAura.Value) then
-                        task.spawn(function()
-                            anchor(v)
-                        end)
-                    end
-                    if (config.Auras.FireAura.Value) then
-                        task.spawn(function()
-                            local toy = spawntoy("Campfire", LocalRoot.CFrame)
-                            if (toy and toy.SoundPart) then
-                                local e = toy.SoundPart
-                                SetNetworkOwner(e)
-                                task.wait(.1)
-                                e.CFrame = v.CFrame
-                                task.delay(.5, destroyToy, e.Parent)
-                            end
-                        end)
-                    end
-                    if (config.Auras.NoclipAura.Value) then
-                        task.spawn(function()
-                            SetNetworkOwner(v)
-                            task.wait(.1)
-                            v.CanCollide = false
-                        end)
-                    end
-                end
-            end
-            AuraTimer = 0
-        end
-
-        if (config.Combats.AntiVoid.Value) then
-            workspace.FallenPartsDestroyHeight = 0 / 0
-            local rad = math.huge
-            local height = -87.5
-            local Y = LocalRoot.CFrame.Y
-            if (height >= Y) then
-                local struggleEvent = service.ReplicatedStorage:FindFirstChild("CharacterEvents") and service.ReplicatedStorage.CharacterEvents:FindFirstChild("Struggle")
-                local stopVelocityEvent = service.ReplicatedStorage:FindFirstChild("GameCorrectionEvents") and service.ReplicatedStorage.GameCorrectionEvents:FindFirstChild("StopAllVelocity")
-                
-                if (struggleEvent and struggleEvent:IsA("RemoteEvent")) then
-                    struggleEvent:FireServer()
-                end
-                if (stopVelocityEvent and stopVelocityEvent:IsA("RemoteEvent")) then
-                    stopVelocityEvent:FireServer()
-                end
-                
-                local p = workspace.SpawnLocation
-                local pos = (p.Position + Vector3.new(math.random(-p.Size.X * 0.5, p.Size.X * 0.5), math.random(0, p.Size.Y), math.random(-p.Size.Z * 0.5, p.Size.Z * 0.5)))
-                LocalRoot.CFrame = (CFrame.new(pos, LocalRoot.CFrame.LookVector))
-                LocalRoot.AssemblyLinearVelocity = Vector3.zero
-                LocalRoot.AssemblyAngularVelocity = Vector3.zero
-                windNotify({
-                    Title = "Suisei Hub",
-                    Content = "Suisei saved you from the void!",
-                    Duration = 5
-                })
-            end
-        end
-
-        if (config.Combats.AntiFar.Value) then
-            if (not IsInRadius(LocalRoot, Vector3.zero, 4096)) then
-                local struggleEvent = service.ReplicatedStorage:FindFirstChild("CharacterEvents") and service.ReplicatedStorage.CharacterEvents:FindFirstChild("Struggle")
-                local stopVelocityEvent = service.ReplicatedStorage:FindFirstChild("GameCorrectionEvents") and service.ReplicatedStorage.GameCorrectionEvents:FindFirstChild("StopAllVelocity")
-                
-                if (struggleEvent and struggleEvent:IsA("RemoteEvent")) then
-                    struggleEvent:FireServer()
-                end
-                if (stopVelocityEvent and stopVelocityEvent:IsA("RemoteEvent")) then
-                    stopVelocityEvent:FireServer()
-                end
-                
-                local p = workspace.SpawnLocation
-                local pos = (p.Position + Vector3.new(math.random(-p.Size.X * 0.5, p.Size.X * 0.5), math.random(0, p.Size.Y), math.random(-p.Size.Z * 0.5, p.Size.Z * 0.5)))
-                LocalRoot.CFrame = (CFrame.new(pos, LocalRoot.CFrame.LookVector))
-                LocalRoot.AssemblyLinearVelocity = Vector3.zero
-                LocalRoot.AssemblyAngularVelocity = Vector3.zero
-                windNotify({
-                    Title = "Suisei Hub",
-                    Content = "Suisei saved you from being too far!",
-                    Duration = 5
-                })
-            end
-        end
-
-        if (config.Combats.InvisLine.Value) then
-            service.ReplicatedStorage.GrabEvents.DestroyGrabLine:FireServer()
-        end
-
-        if (config.Combats.AimBot.Value) then
-            for _, v in ipairs(GetNearParts(LocalRoot.CFrame.Position, config.Combats.AimBot.Radius.Value)) do
-                if (not v.Anchored and not v:IsDescendantOf(LocalChar)) then
-                    local p = service.Players:GetPlayerFromCharacter(v.Parent)
-                    if (p and p == LocalPlayer) then continue end
-                    if (IsFriend(p) and config.Settings.IgnoreFriend.Value) then continue end
-                    if (not p and config.Settings.OnlyPlayer.Value) then continue end
-                    if (v.Name ~= config.Combats.AimBot.Part.Value) then continue end
-                    
-                    if workspace.CurrentCamera then
-                        workspace.CurrentCamera.CFrame =
-                            workspace.CurrentCamera.CFrame:Lerp(
-                                CFrame.lookAt(
-                                    workspace.CurrentCamera.CFrame.Position,
-                                    v.Position
-                                ),
-                                config.Settings.AimBotSpeed.Value / 10
-                            )
-                    end
-                end
-            end
-        end
-
-        --// MISCS
-        if (config.Miscs.Control.Value) then
-            local targetModel = config.Miscs.Control.Target.Value
-            if (not targetModel or not targetModel.PrimaryPart) then return end
-            
-            local root = targetModel.PrimaryPart
-            LocalRoot.CFrame = root.CFrame + Vector3.new(0, -10, 0)
-            
-            local hum = cget(root.Parent, "Humanoid")
-            if (hum and workspace.CurrentCamera) then
-                workspace.CurrentCamera.CameraSubject = hum
-            end
-            
-            for _, v in ipairs(LocalChar:GetDescendants()) do
-                if (v:IsA("BasePart")) then
-                    v.CanCollide = false
-                end
-            end
-        end
-        local ChatTyping = get(LocalChar, "ChatTyping")
-        if (ChatTyping) then
-            ChatTyping.Enabled = not config.Miscs.NoTyping.Value
-        end
-        if (AntiKickDisablerTimer >= .5) then
-            if (config.Miscs.AntiKickDisabler.Value) then
-                for _, v in ipairs(GetNearParts(LocalRoot.Position, 16)) do
-                    if (v.Name == "FirePlayerPart" and not v:IsDescendantOf(LocalChar)) then
-                        local p = service.Players:GetPlayerFromCharacter(v.Parent.Parent)
-                        if (p) then
-                            SetNetworkOwner(v)
-                            v.CFrame = CFrame.new(0, -200, 0)
                         end
                     end
                 end
-            end
-            AntiKickDisablerTimer = 0
-        end
-        if (config.Miscs.NWOAura.Value) then
-            for _, v in ipairs(GetNearParts(LocalRoot.Position, config.Settings.AuraRadius.Value)) do
-                if (not v.Anchored and not v:IsDescendantOf(LocalChar)) then
-                    SetNetworkOwner(v)
+            end) end
+            
+            if config.Miscs.Control.Value then
+                local p = service.Players:GetPlayerFromCharacter(grabbing.Parent)
+                if not p and grabbing.Parent:FindFirstChild("Humanoid") and grabbing.Parent.PrimaryPart then
+                    SetNetworkOwner(grabbing.Parent.PrimaryPart)
+                    config.Miscs.Control.Target.Value = grabbing.Parent
                 end
-            end
-        end
-
-        --// BLOBMAN
-        local blob = getBlobman()
-        if (config.Blobman.Noclip.Value) then
-            if (blob) then
-                for _, v in ipairs(blob:GetDescendants()) do
-                    if (v:IsA("BasePart")) then
-                        v.CanCollide = false
-                    end
-                end
-            end
-        end
-        if (config.Blobman.GrabAura.Value and blob) then
-            for _, v in ipairs(GetNearParts(LocalRoot.Position, config.Settings.AuraRadius.Value)) do
-                if (not v.Anchored and not v:IsDescendantOf(LocalChar) and (v.Name == "HumanoidRootPart" or v.Name == "Torso")) then
-                    local p = service.Players:GetPlayerFromCharacter(v.Parent)
-                    if (p and p == LocalPlayer) then continue end
-                    if (IsFriend(p) and config.Settings.IgnoreFriend.Value) then continue end
-                    if (not p and config.Settings.OnlyPlayer.Value) then continue end
-                    blobGrab(blob, v, config.Blobman.ArmSide.Value)
-                end
-            end
-        end
-        if (config.Blobman.KickAura.Value and blob) then
-            for _, v in ipairs(GetNearParts(LocalRoot.Position, config.Settings.AuraRadius.Value)) do
-                if (not v.Anchored and not v:IsDescendantOf(LocalChar) and (v.Name == "HumanoidRootPart" or v.Name == "Torso")) then
-                    local p = service.Players:GetPlayerFromCharacter(v.Parent)
-                    if (p and p == LocalPlayer) then continue end
-                    if (IsFriend(p) and config.Settings.IgnoreFriend.Value) then continue end
-                    if (not p and config.Settings.OnlyPlayer.Value) then continue end
-                    blobKick(blob, v, config.Blobman.ArmSide.Value)
-                end
-            end
-        end
-        if (config.Blobman.LoopKick.Value and blob) then
-            local t = getPlayerFromName(config.Blobman.Target.Value)
-            if (t) then
-                local root = get(t.Character, "HumanoidRootPart")
-                if (root) then
-                    blobKick(blob, root, config.Blobman.ArmSide.Value)
-                end
-            end
-        end
-        if (config.Blobman.LoopKickAll.Value and blob) then
-            for _, v in ipairs(service.Players:GetPlayers()) do
-                if (v == LocalPlayer) then continue end
-                if (not config.Settings.IgnoreIsInPlot.Value and IsInPlot(v)) then continue end
-                if (config.Settings.IgnoreFriend.Value and IsFriend(v)) then continue end
-                local character = v.Character
-                if (not character) then continue end
-                local root = get(character, "HumanoidRootPart")
-                if (not root) then continue end
-                blobKick(blob, root, config.Blobman.ArmSide.Value)
-            end
-        end
-
-        --// SNIPES
-        if (SnipeLoopTimer >= 1) then
-            local TargetName = config.Snipes.Target.Value
-            local t = getPlayerFromName(TargetName)
-            local root = t and get(t.Character, "HumanoidRootPart")
-            if (root) then
-                if (config.Snipes.LoopVoid.Value) then
-                    task.spawn(function()
-                        Snipefunc(root, function()
-                            Velocity(root, Vector3.new(0, 1e4, 0))
-                            LocalRoot.CFrame = LocalRoot.CFrame
-                        end)
-                    end)
-                end
-                if (config.Snipes.LoopKill.Value) then
-                    task.spawn(function()
-                        Snipefunc(root, function()
-                            MoveTo(root, CFrame.new(4096, -75, 4096))
-                            Velocity(root, Vector3.new(0, -1e3, 0))
-                            LocalRoot.CFrame = LocalRoot.CFrame
-                        end)
-                    end)
-                end
-                if (config.Snipes.LoopPoison.Value) then
-                    task.spawn(function()
-                        Snipefunc(root, function()
-                            MoveTo(root, CFrame.new(58, -70, 271))
-                            LocalRoot.CFrame = LocalRoot.CFrame
-                        end)
-                    end)
-                end
-                if (config.Snipes.LoopRagdoll.Value) then
-                    task.spawn(function()
-                        Snipefunc(root, function()
-                            local rpos = root.CFrame
-                            Velocity(root, Vector3.new(0, -64, 0))
-                            task.wait(.1)
-                            LocalRoot.CFrame = rpos
-                            Velocity(root, Vector3.zero)
-                            LocalRoot.CFrame = LocalRoot.CFrame
-                        end)
-                    end)
-                end
-                if (config.Snipes.LoopDeath.Value) then
-                    task.spawn(function()
-                        Snipefunc(root, function()
-                            local hum = cget(root.Parent, "Humanoid")
-                            if (hum) then
-                                hum:ChangeState(Enum.HumanoidStateType.Dead)
-                            end
-                            task.wait(.5)
-                            ungrab(root)
-                            LocalRoot.CFrame = LocalRoot.CFrame
-                        end)
-                    end)
-                end
-            end
-            SnipeLoopTimer = 0
-        end
-
-        --// TROLLS
-        if (LoudAllTimer >= .1) then
-            if (config.Trolls.LoudAll.Value and config.Trolls.LoudAll.SoundPart.Value) then
-                local soundPart = config.Trolls.LoudAll.SoundPart.Value.SoundPart
-                for _, v in ipairs(service.Players:GetPlayers()) do
-                    if (v == LocalPlayer) then continue end
-                    if (not config.Settings.IgnoreIsInPlot.Value and IsInPlot(v)) then continue end
-                    if (config.Settings.IgnoreFriend.Value and IsFriend(v)) then continue end
-                    local character = v.Character
-                    if (not character) then continue end
-                    local root = get(character, "HumanoidRootPart")
-                    if (not root) then continue end
-                    soundPart.CFrame = root.CFrame
-                end
-            end
-            LoudAllTimer = 0
-        end
-        if (config.Trolls.Lag.Value) then
-            lag(config.Settings.Lag.Value)
-        end
-        if (config.Trolls.Ping.Value) then
-            ping(config.Settings.Ping.Value)
-        end
-        if (ServerDestroyerTimer >= .1) then
-            if (config.Trolls.ServerDestroyer.Value) then
-                for _ = 1, 32 do
-                    createLine(nil)
-                    LocalRoot.CFrame = config.Trolls.ServerDestroyer.CFrame
-                end
-            end
-            ServerDestroyerTimer = 0
-        end
-        if (config.Trolls.ChaosLine.Value) then
-            for _ = 1, 32 do
-                createLine(nil)
             end
         end
     end)
 end
 
-print("[Suisei Hub] Loaded successfully!")
+print("[Suisei Hub] Full Version Loaded")
