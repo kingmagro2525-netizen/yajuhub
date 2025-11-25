@@ -15,7 +15,7 @@ local service = setmetatable({}, {
 -- Orion Libraryのロード
 local OrionLib = nil
 local ols, olr = pcall(function()
-    OrionLib = loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Orion/main/source'))()
+    OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Polinorsik/Orion-Z-Library/refs/heads/main/README.md"))()
 end)
 
 if (not ols or not OrionLib) then
