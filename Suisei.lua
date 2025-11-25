@@ -1,4 +1,3 @@
-やっぱこっちのコードのタブとかタブの中に入ってる機能をわかりやすく教えて
 --[[
 ==== SUISEI HUB ====
 Made by Luna!! (Modified for Orion Library)
