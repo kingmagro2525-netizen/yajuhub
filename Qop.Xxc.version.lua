@@ -1,3 +1,16 @@
+--[[
+    修正点:
+    1. (最重要) スクリプト冒頭の `playerCharacter` 取得から `CharacterAdded:Wait()` を削除しました。
+       代わりに、`CharacterAdded` イベントと起動時のチェックで `playerCharacter` を設定するように変更しました。
+       これにより、キャラクターの読み込みが遅れてもスクリプト（GUI）が起動するようになります。
+    2. 長時間実行されるコルーチン (しゃがみ速度/ジャンプ、ミサイルリロード、FireAllなど) が、
+       古いキャラクターの情報を参照し続けるのを防ぐため、ループ内で常に最新の `localPlayer.Character` を
+       参照するように修正しました。
+    3. 多くの `pcall` (安全呼び出し) に `warn` を追加しました。もし特定の機能がエラーで動作していない場合、
+       開発者コンソール (F9キー) に原因（エラーメッセージ）が出力されるようになります。
+    4. `arson` 関数など、いくつかの箇所で nil チェックを強化し、エラー耐性を高めました。
+]]
+
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -9,7 +22,7 @@ local Debris = game:GetService("Debris")
 local GrabEvents = ReplicatedStorage:WaitForChild("GrabEvents")
 local MenuToys = ReplicatedStorage:WaitForChild("MenuToys")
 local CharacterEvents = ReplicatedStorage:WaitForChild("CharacterEvents")
-local DataEvents = ReplicatedStorage:FindFirstChild("DataEvents") -- Line機能用 (FindFirstChildに修正)
+local DataEvents = ReplicatedStorage:FindFirstChild("DataEvents") -- Line機能用
 
 local SetNetworkOwner = GrabEvents:WaitForChild("SetNetworkOwner")
 local Struggle = CharacterEvents:WaitForChild("Struggle")
@@ -18,11 +31,15 @@ local DestroyLine = GrabEvents:WaitForChild("DestroyGrabLine")
 local DestroyToy = MenuToys:WaitForChild("DestroyToy")
 
 local localPlayer = Players.LocalPlayer
-local playerCharacter = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+local playerCharacter = localPlayer.Character -- <--- [修正点 1] :Wait() を削除
 
 localPlayer.CharacterAdded:Connect(function(character)
     playerCharacter = character
 end)
+if localPlayer.Character then -- <--- [修正点 1] 既に存在する場合に設定
+    playerCharacter = localPlayer.Character
+end
+
 
 -- 変数定義
 local AutoRecoverDroppedPartsCoroutine
@@ -79,10 +96,10 @@ local loopTpCoroutine
 local currentLoopTpPlayerIndex = 1
 local blobman
 local isSpawningBlobmanForSit = false -- 自動スポーン制御用フラグ
-local lastSpawnAttempt = 0 -- AutoSitクールダウン用 (修正案適用)
-local SPAWN_COOLDOWN = 0.5 -- 0.5秒のクールダウン (修正案適用)
+local lastSpawnAttempt = 0 -- AutoSitクールダウン用
+local SPAWN_COOLDOWN = 0.5 -- 0.5秒のクールダウン
 
--- Line機能用変数 (追加)
+-- Line機能用変数
 local lineLagEnabled = false
 local lineLagAllEnabled = false
 local lineLagTarget = nil
@@ -156,17 +173,18 @@ function Utilities.GetSurroundingVectors(target, radius, amount, offset)
     return positions
 end
 
--- Line機能用ヘルパー関数 (修正案適用)
+-- Line機能用ヘルパー関数
 local function UpdateLineColors(...)
     if not DataEvents then 
         warn("DataEvents not found - Line features disabled")
         return 
     end
-    pcall(function()
+    local success, err = pcall(function()
         if DataEvents:FindFirstChild("UpdateLineColorsEvent") then
             DataEvents.UpdateLineColorsEvent:FireServer(...)
         end
     end)
+    if not success then warn("Error in UpdateLineColors: "..tostring(err)) end
 end
 
 local function CreateRainbowSequence()
@@ -227,7 +245,6 @@ local function CreateLineLag(targetPlayer)
     local torso = character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
     if not torso then return end
     
-    -- CreateLineはGrabEvents:WaitForChild("CreateGrabLine")
     if CreateLine then
         CreateLine:FireServer(
             torso,
@@ -238,8 +255,8 @@ end
 
 local function executeBarrierBreak()
     task.spawn(function()
-        pcall(function()
-            local character = localPlayer.Character
+        local success, err = pcall(function()
+            local character = localPlayer.Character -- <--- [修正点 2] 最新のキャラを取得
             if not character or not character:FindFirstChild("HumanoidRootPart") then return end
             
             local originalPosition = character.HumanoidRootPart.CFrame
@@ -278,6 +295,7 @@ local function executeBarrierBreak()
                 end
             end
         end)
+        if not success then warn("Error in executeBarrierBreak: "..tostring(err)) end
     end)
 end
 
@@ -303,10 +321,14 @@ end
 
 local function getDescendantParts(descendantName)
     local parts = {}
-    for _, descendant in ipairs(workspace.Map:GetDescendants()) do
-        if descendant:IsA("Part") and descendant.Name == descendantName then
-            table.insert(parts, descendant)
+    if workspace:FindFirstChild("Map") then -- マップが存在するか確認
+        for _, descendant in ipairs(workspace.Map:GetDescendants()) do
+            if descendant:IsA("Part") and descendant.Name == descendantName then
+                table.insert(parts, descendant)
+            end
         end
+    else
+        warn("workspace.Map not found, cannot get "..descendantName)
     end
     return parts
 end
@@ -314,18 +336,26 @@ end
 local poisonHurtParts = getDescendantParts("PoisonHurtPart")
 local paintPlayerParts = getDescendantParts("PaintPlayerPart")
 
-for i, v in pairs(localPlayer:WaitForChild("PlayerGui"):WaitForChild("MenuGui"):WaitForChild("Menu"):WaitForChild("TabContents"):WaitForChild("Toys"):WaitForChild("Contents"):GetChildren()) do
-    if v.Name ~= "UIGridLayout" then
-        ownedToys[v.Name] = true
+-- GUIの準備ができてからおもちゃリストを取得
+task.spawn(function()
+    local contents = localPlayer:WaitForChild("PlayerGui"):WaitForChild("MenuGui"):WaitForChild("Menu"):WaitForChild("TabContents"):WaitForChild("Toys"):WaitForChild("Contents")
+    for i, v in pairs(contents:GetChildren()) do
+        if v.Name ~= "UIGridLayout" then
+            ownedToys[v.Name] = true
+        end
     end
-end
+end)
+
 
 local function getNearestPlayer()
     local nearestPlayer
     local nearestDistance = math.huge
+    local character = localPlayer.Character -- <--- [修正点 2] 最新のキャラを取得
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
+    
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= localPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            local distance = (playerCharacter.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+            local distance = (character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
             if distance < nearestDistance then
                 nearestDistance = distance
                 nearestPlayer = player
@@ -346,7 +376,8 @@ local function getPlayerNamesForDropdown()
 end
 
 local function cleanupConnections(connectionTable)
-    for _, connection in ipairs(connectionTable) do
+    for i = #connectionTable, 1, -1 do
+        local connection = table.remove(connectionTable, i)
         if connection and typeof(connection) == "RBXScriptConnection" then
             pcall(function() connection:Disconnect() end)
         end
@@ -362,11 +393,25 @@ local function spawnItem(itemName, position, orientation)
 end
 
 local function arson(part)
+    if not toysFolder then
+        warn("toysFolder not found in arson")
+        return
+    end
     if not toysFolder:FindFirstChild("Campfire") then
         spawnItem("Campfire", Vector3.new(-72.9304581, -5.96906614, -265.543732))
     end
-    local campfire = toysFolder:FindFirstChild("Campfire")
-    local burnPart = campfire:FindFirstChild("FirePlayerPart") or campfire.FirePlayerPart
+    local campfire = toysFolder:WaitForChild("Campfire", 2) -- <--- [修正点 4] WaitForChildとnilチェック
+    if not campfire then 
+        warn("Campfire not found in arson")
+        return 
+    end
+    
+    local burnPart = campfire:FindFirstChild("FirePlayerPart")
+    if not burnPart then -- <--- [修正点 4] nilチェック
+        warn("FirePlayerPart not found in arson")
+        return 
+    end
+    
     burnPart.Size = Vector3.new(7, 7, 7)
     burnPart.Position = part.Position
     task.wait(0.3)
@@ -376,10 +421,14 @@ end
 local function handleCharacterAdded(player)
     local characterAddedConnection = player.CharacterAdded:Connect(function(character)
         local hrp = character:WaitForChild("HumanoidRootPart")
-        local fpp = hrp:WaitForChild("FirePlayerPart")
-        fpp.Size = Vector3.new(4.5, 5, 4.5)
-        fpp.CollisionGroup = "1"
-        fpp.CanQuery = true
+        if hrp then
+            local fpp = hrp:WaitForChild("FirePlayerPart")
+            if fpp then
+                fpp.Size = Vector3.new(4.5, 5, 4.5)
+                fpp.CollisionGroup = "1"
+                fpp.CanQuery = true
+            end
+        end
     end)
     table.insert(kickGrabConnections, characterAddedConnection)
 end
@@ -403,7 +452,7 @@ end
 
 local function grabHandler(grabType)
     while true do
-        pcall(function()
+        local success, err = pcall(function()
             local child = workspace:FindFirstChild("GrabParts")
             if child and child.Name == "GrabParts" then
                 local grabPart = child:FindFirstChild("GrabPart")
@@ -432,13 +481,14 @@ local function grabHandler(grabType)
                 end
             end
         end)
+        if not success then warn("Error in grabHandler ("..tostring(grabType).."): "..tostring(err)) end -- <--- [修正点 3]
         wait()
     end
 end
 
 local function fireGrab()
     while true do
-        pcall(function()
+        local success, err = pcall(function()
             local child = workspace:FindFirstChild("GrabParts")
             if child and child.Name == "GrabParts" then
                 local grabPart = child:FindFirstChild("GrabPart")
@@ -451,13 +501,14 @@ local function fireGrab()
                 end
             end
         end)
+        if not success then warn("Error in fireGrab: "..tostring(err)) end -- <--- [修正点 3]
         wait()
     end
 end
 
 local function noclipGrab()
     while true do
-        pcall(function()
+        local success, err = pcall(function()
             local child = workspace:FindFirstChild("GrabParts")
             if child and child.Name == "GrabParts" then
                 local grabPart = child:FindFirstChild("GrabPart")
@@ -484,6 +535,7 @@ local function noclipGrab()
                 end
             end
         end)
+        if not success then warn("Error in noclipGrab: "..tostring(err)) end -- <--- [修正点 3]
         wait()
     end
 end
@@ -497,12 +549,17 @@ end
 
 local function fireAll()
     while true do
-        pcall(function()
+        local success, err = pcall(function()
+            if not toysFolder then return end
+            
+            local character = localPlayer.Character -- <--- [修正点 2]
+            if not character or not character:FindFirstChild("Head") or not character:FindFirstChild("Torso") then return end
+            
             if toysFolder:FindFirstChild("Campfire") then
                 DestroyT(toysFolder:FindFirstChild("Campfire"))
                 wait(0.5)
             end
-            spawnItemCf("Campfire", playerCharacter.Head.CFrame)
+            spawnItemCf("Campfire", character.Head.CFrame)
             local campfire = toysFolder:WaitForChild("Campfire")
             local firePlayerPart
             for _, part in pairs(campfire:GetChildren()) do
@@ -512,20 +569,30 @@ local function fireAll()
                     break
                 end
             end
-            local originalPosition = playerCharacter.Torso.Position
+            if not firePlayerPart then return end -- パーツが見つからなければリトライ
+            
+            local originalPosition = character.Torso.Position
             SetNetworkOwner:FireServer(firePlayerPart, firePlayerPart.CFrame)
-            playerCharacter:MoveTo(firePlayerPart.Position)
+            character:MoveTo(firePlayerPart.Position)
             wait(0.3)
-            playerCharacter:MoveTo(originalPosition)
+            character:MoveTo(originalPosition)
+            
             local bodyPosition = Instance.new("BodyPosition")
             bodyPosition.P = 20000
-            bodyPosition.Position = playerCharacter.Head.Position + Vector3.new(0, 600, 0)
+            bodyPosition.Position = character.Head.Position + Vector3.new(0, 600, 0)
             bodyPosition.Parent = campfire.Main
+            
             while true do
+                local currentCharacter = localPlayer.Character -- <--- [修正点 2] 内側ループでも最新を取得
+                if not currentCharacter or not currentCharacter:FindFirstChild("Head") then 
+                    bodyPosition:Destroy() -- キャラがいなくなったらBodyPositionを削除してループを抜ける
+                    break 
+                end
+                
                 for _, player in pairs(Players:GetChildren()) do
                     pcall(function()
-                        bodyPosition.Position = playerCharacter.Head.Position + Vector3.new(0, 600, 0)
-                        if player.Character and player.Character.HumanoidRootPart and player.Character ~= playerCharacter then
+                        bodyPosition.Position = currentCharacter.Head.Position + Vector3.new(0, 600, 0)
+                        if player.Character and player.Character.HumanoidRootPart and player.Character ~= currentCharacter then
                             firePlayerPart.Position = player.Character.HumanoidRootPart.Position or player.Character.Head.Position
                             wait()
                         end
@@ -534,6 +601,7 @@ local function fireAll()
                 wait()
             end
         end)
+        if not success then warn("Error in fireAll: "..tostring(err)) end -- <--- [修正点 3]
         wait()
     end
 end
@@ -579,7 +647,7 @@ end
 
 local function anchorGrab()
     while true do
-        pcall(function()
+        local success, err = pcall(function()
             local grabParts = workspace:FindFirstChild("GrabParts")
             if not grabParts then return end
             local grabPart = grabParts:FindFirstChild("GrabPart")
@@ -591,7 +659,7 @@ local function anchorGrab()
             if primaryPart.Anchored then return end
             if isDescendantOf(primaryPart, workspace.Map) then return end
             for _, player in pairs(Players:GetChildren()) do
-                if isDescendantOf(primaryPart, player.Character) then return end
+                if player.Character and isDescendantOf(primaryPart, player.Character) then return end -- <--- 修正: player.Characterの存在チェック
             end
             local t = true
             for _, v in pairs(primaryPart:GetDescendants()) do
@@ -631,13 +699,14 @@ local function anchorGrab()
             end
             createBodyMovers(primaryPart, primaryPart.Position, primaryPart.CFrame)
         end)
+        if not success then warn("Error in anchorGrab: "..tostring(err)) end -- <--- [修正点 3]
         wait()
     end
 end
 
 local function anchorKickGrab()
     while true do
-        pcall(function()
+        local success, err = pcall(function()
             local grabParts = workspace:FindFirstChild("GrabParts")
             if not grabParts then return end
             local grabPart = grabParts:FindFirstChild("GrabPart")
@@ -658,13 +727,14 @@ local function anchorKickGrab()
             end
             createBodyMovers(primaryPart, primaryPart.Position, primaryPart.CFrame)
         end)
+        if not success then warn("Error in anchorKickGrab: "..tostring(err)) end -- <--- [修正点 3]
         wait()
     end
 end
 
 local function cleanupAnchoredParts()
     for _, part in ipairs(anchoredParts) do
-        if part then
+        if part and part.Parent then -- <--- 修正: partが存在し、Parentがあるか確認
             if part:FindFirstChild("BodyPosition") then
                 part.BodyPosition:Destroy()
             end
@@ -683,15 +753,17 @@ end
 
 local function updateBodyMovers(primaryPart)
     for _, group in ipairs(compiledGroups) do
-        if group.primaryPart and group.primaryPart == primaryPart then
+        if group.primaryPart and group.primaryPart == primaryPart and group.primaryPart.Parent then -- <--- 修正: primaryPartが存在するか確認
             for _, data in ipairs(group.group) do
-                local bodyPosition = data.part:FindFirstChild("BodyPosition")
-                local bodyGyro = data.part:FindFirstChild("BodyGyro")
-                if bodyPosition then
-                    bodyPosition.Position = (primaryPart.CFrame * data.offset).Position
-                end
-                if bodyGyro then
-                    bodyGyro.CFrame = primaryPart.CFrame * data.offset
+                if data.part and data.part.Parent then -- <--- 修正: data.partが存在するか確認
+                    local bodyPosition = data.part:FindFirstChild("BodyPosition")
+                    local bodyGyro = data.part:FindFirstChild("BodyGyro")
+                    if bodyPosition then
+                        bodyPosition.Position = (primaryPart.CFrame * data.offset).Position
+                    end
+                    if bodyGyro then
+                        bodyGyro.CFrame = primaryPart.CFrame * data.offset
+                    end
                 end
             end
         end
@@ -705,15 +777,16 @@ local function compileGroup()
     end
     OrionLib:MakeNotification({Name = "Success", Content = "Compiled "..#anchoredParts.." Toys together", Image = "rbxassetid://4483345998", Time = 5})
     local primaryPart = anchoredParts[1]
-    if not primaryPart then return end
-    local highlight = primaryPart:FindFirstChild("Highlight") or primaryPart.Parent:FindFirstChild("Highlight")
+    if not primaryPart or not primaryPart.Parent then return end -- <--- 修正: 存在チェック
+    
+    local highlight = primaryPart:FindFirstChild("Highlight") or (primaryPart.Parent and primaryPart.Parent:FindFirstChild("Highlight"))
     if not highlight then
         highlight = createHighlight(primaryPart.Parent:IsA("Model") and primaryPart.Parent or primaryPart)
     end
     highlight.OutlineColor = Color3.new(0, 1, 0)
     local group = {}
     for _, part in ipairs(anchoredParts) do
-        if part ~= primaryPart then
+        if part and part.Parent and part ~= primaryPart then -- <--- 修正: 存在チェック
             local offset = primaryPart.CFrame:toObjectSpace(part.CFrame)
             table.insert(group, {part = part, offset = offset})
         end
@@ -732,7 +805,7 @@ end
 local function cleanupCompiledGroups()
     for _, groupData in ipairs(compiledGroups) do
         for _, data in ipairs(groupData.group) do
-            if data.part then
+            if data.part and data.part.Parent then -- <--- 修正: 存在チェック
                 if data.part:FindFirstChild("BodyPosition") then
                     data.part.BodyPosition:Destroy()
                 end
@@ -755,18 +828,22 @@ end
 
 local function compileCoroutineFunc()
     while true do
-        pcall(function()
+        local success, err = pcall(function()
             for _, groupData in ipairs(compiledGroups) do
-                updateBodyMovers(groupData.primaryPart)
+                if groupData.primaryPart and groupData.primaryPart.Parent then -- <--- 修正: 存在チェック
+                    updateBodyMovers(groupData.primaryPart)
+                end
             end
         end)
+        if not success then warn("Error in compileCoroutineFunc: "..tostring(err)) end -- <--- [修正点 3]
         wait()
     end
 end
 
 local function unanchorPrimaryPart()
+    if #anchoredParts == 0 then return end
     local primaryPart = anchoredParts[1]
-    if not primaryPart then return end
+    if not primaryPart or not primaryPart.Parent then return end -- <--- 修正: 存在チェック
     if primaryPart:FindFirstChild("BodyPosition") then
         primaryPart.BodyPosition:Destroy()
     end
@@ -781,35 +858,42 @@ end
 
 local function recoverParts()
     while true do
-        pcall(function()
-            local character = localPlayer.Character
+        local success, err = pcall(function()
+            local character = localPlayer.Character -- <--- [修正点 2]
             if character and character:FindFirstChild("Head") and character:FindFirstChild("HumanoidRootPart") then
                 local humanoidRootPart = character.HumanoidRootPart
                 for _, partModel in pairs(anchoredParts) do
                     coroutine.wrap(function()
-                        if partModel then
+                        if partModel and partModel.Parent then -- <--- 修正: 存在チェック
                             local distance = (partModel.Position - humanoidRootPart.Position).Magnitude
                             if distance <= 30 then
                                 local highlight = partModel:FindFirstChild("Highlight") or partModel.Parent:FindFirstChild("Highlight")
                                 if highlight and highlight.OutlineColor == Color3.new(1, 0, 0) then
                                     SetNetworkOwner:FireServer(partModel, partModel.CFrame)
-                                    if partModel:WaitForChild("PartOwner") and partModel.PartOwner.Value == localPlayer.Name then
+                                    local partOwner = partModel:WaitForChild("PartOwner", 0.5) -- <--- 修正: 少し待つ
+                                    if partOwner and partOwner.Value == localPlayer.Name then
                                         highlight.OutlineColor = Color3.new(0, 0, 1)
                                     end
-                                end
+                                 end
                             end
                         end
                     end)()
                 end
             end
         end)
+        if not success then warn("Error in recoverParts: "..tostring(err)) end -- <--- [修正点 3]
         wait(0.02)
     end
 end
 
 local function ragdollAll()
     while true do
-        pcall(function()
+        local success, err = pcall(function()
+            if not toysFolder then return end
+            
+            local character = localPlayer.Character -- <--- [修正点 2]
+            if not character or not character:FindFirstChild("Head") then return end
+
             if not toysFolder:FindFirstChild("FoodBanana") then
                 spawnItem("FoodBanana", Vector3.new(-72.9304581, -5.96906614, -265.543732))
             end
@@ -823,15 +907,24 @@ local function ragdollAll()
                     break
                 end
             end
+            if not bananaPeel then return end -- パーツが見つからなければリトライ
+            
             local bodyPosition = Instance.new("BodyPosition")
             bodyPosition.P = 20000
             bodyPosition.Parent = banana.Main
+            
             while true do
+                local currentCharacter = localPlayer.Character -- <--- [修正点 2] 内側ループでも最新を取得
+                if not currentCharacter or not currentCharacter:FindFirstChild("Head") then
+                    bodyPosition:Destroy()
+                    break
+                end
+                
                 for _, player in pairs(Players:GetChildren()) do
                     pcall(function()
-                        if player.Character and player.Character ~= playerCharacter then
+                        if player.Character and player.Character ~= currentCharacter then
                             bananaPeel.Position = player.Character.HumanoidRootPart.Position or player.Character.Head.Position
-                            bodyPosition.Position = playerCharacter.Head.Position + Vector3.new(0, 600, 0)
+                            bodyPosition.Position = currentCharacter.Head.Position + Vector3.new(0, 600, 0)
                             wait()
                         end
                     end)
@@ -839,6 +932,7 @@ local function ragdollAll()
                 wait()
             end
         end)
+        if not success then warn("Error in ragdollAll: "..tostring(err)) end -- <--- [修正点 3]
         wait()
     end
 end
@@ -856,6 +950,11 @@ local function reloadMissile(bool)
         end
         if not reloadBombCoroutine then
             reloadBombCoroutine = coroutine.create(function()
+                if not toysFolder then
+                    warn("toysFolder not found in reloadMissile")
+                    return
+                end
+                
                 connectionBombReload = toysFolder.ChildAdded:Connect(function(child)
                     if child.Name == _G.ToyToLoad and child:WaitForChild("ThisToysNumber", 1) then
                         if child.ThisToysNumber.Value == (toysFolder.ToyNumber.Value - 1) then
@@ -908,8 +1007,9 @@ local function reloadMissile(bool)
                     end
                 end)
                 while true do
-                    if localPlayer.CanSpawnToy and localPlayer.CanSpawnToy.Value and #bombList < _G.MaxMissiles and playerCharacter:FindFirstChild("Head") then
-                        spawnItemCf(_G.ToyToLoad, playerCharacter.Head.CFrame or playerCharacter.HumanoidRootPart.CFrame)
+                    local character = localPlayer.Character -- <--- [修正点 2]
+                    if localPlayer.CanSpawnToy and localPlayer.CanSpawnToy.Value and #bombList < _G.MaxMissiles and character and character:FindFirstChild("Head") then
+                        spawnItemCf(_G.ToyToLoad, character.Head.CFrame or character.HumanoidRootPart.CFrame)
                     end
                     RunService.Heartbeat:Wait()
                 end
@@ -923,12 +1023,14 @@ local function reloadMissile(bool)
         end
         if connectionBombReload then
             connectionBombReload:Disconnect()
+            connectionBombReload = nil -- <--- 修正: 切断後にnilに設定
         end
     end
 end
 
 local function setupAntiExplosion(character)
-    local partOwner = character:WaitForChild("Humanoid"):FindFirstChild("Ragdolled")
+    if not character or not character:FindFirstChild("Humanoid") then return end
+    local partOwner = character.Humanoid:FindFirstChild("Ragdolled")
     if partOwner then
         local partOwnerChangedConn
         partOwnerChangedConn = partOwner:GetPropertyChangedSignal("Value"):Connect(function()
@@ -1011,24 +1113,27 @@ end
 
 local function loopTPFunction(blobman)
     while true do
-        local playersToTarget = {}
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= localPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.IsHeld and p.IsHeld.Value == false then
-                table.insert(playersToTarget, p)
+        local success, err = pcall(function() -- <--- [修正点 3] pcall追加
+            local playersToTarget = {}
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= localPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p:FindFirstChild("IsHeld") and p.IsHeld.Value == false then -- <--- 修正: IsHeldの存在チェック
+                    table.insert(playersToTarget, p)
+                end
             end
-        end
-        if #playersToTarget > 0 then
-            local targetPlayer = playersToTarget[currentLoopTpPlayerIndex]
-            if targetPlayer then
-                blobGrabPlayerTP(targetPlayer, blobman)
+            if #playersToTarget > 0 then
+                local targetPlayer = playersToTarget[currentLoopTpPlayerIndex]
+                if targetPlayer then
+                    blobGrabPlayerTP(targetPlayer, blobman)
+                end
+                currentLoopTpPlayerIndex = currentLoopTpPlayerIndex + 1
+                if currentLoopTpPlayerIndex > #playersToTarget then
+                    currentLoopTpPlayerIndex = 1
+                end
+            else
+                wait(0.5)
             end
-            currentLoopTpPlayerIndex = currentLoopTpPlayerIndex + 1
-            if currentLoopTpPlayerIndex > #playersToTarget then
-                currentLoopTpPlayerIndex = 1
-            end
-        else
-            wait(0.5)
-        end
+        end)
+        if not success then warn("Error in loopTPFunction: "..tostring(err)) end
         wait(_G.BlobmanDelay)
     end
 end
@@ -1204,9 +1309,9 @@ GrabTab:AddToggle({
         if enabled then
             kickGrab()
         else
-            for _, connection in pairs(kickGrabConnections) do
-                connection:Disconnect()
-            end
+            cleanupConnections(kickGrabConnections) -- <--- 修正: 専用のクリーンアップ関数を使用
+            kickGrabConnections = {} -- <--- 修正: テーブルをリセット
+            
             for _, player in pairs(Players:GetPlayers()) do
                 if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
                     local hrp = player.Character.HumanoidRootPart
@@ -1218,7 +1323,6 @@ GrabTab:AddToggle({
                     end
                 end
             end
-            kickGrabConnections = {}
         end
     end
 })
@@ -1253,12 +1357,17 @@ GrabTab:AddToggle({
     Save = true,
     Callback = function(enabled)
         if enabled then
-            fireAllCoroutine = coroutine.create(fireAll)
-            coroutine.resume(fireAllCoroutine)
+            if not fireAllCoroutine or coroutine.status(fireAllCoroutine) == "dead" then -- <--- 修正: 再開防止
+                fireAllCoroutine = coroutine.create(fireAll)
+                coroutine.resume(fireAllCoroutine)
+            end
         else
-            if fireAllCoroutine then
+            if fireAllCoroutine and coroutine.status(fireAllCoroutine) ~= "dead" then -- <--- 修正: ステータスチェック
                 coroutine.close(fireAllCoroutine)
                 fireAllCoroutine = nil
+            end
+            if toysFolder and toysFolder:FindFirstChild("Campfire") then -- <--- 修正: クリーンアップ
+                DestroyT(toysFolder:FindFirstChild("Campfire"))
             end
         end
     end
@@ -1352,28 +1461,32 @@ DefenseTab:AddToggle({
     Callback = function(enabled)
         if enabled then
             autoStruggleCoroutine = RunService.Heartbeat:Connect(function()
-                local character = localPlayer.Character
-                if character and character:FindFirstChild("Head") then
-                    local head = character.Head
-                    local partOwner = head:FindFirstChild("PartOwner")
-                    if partOwner then
-                        Struggle:FireServer()
-                        ReplicatedStorage.GameCorrectionEvents.StopAllVelocity:FireServer()
-                        for _, part in pairs(character:GetChildren()) do
-                            if part:IsA("BasePart") then
-                                part.Anchored = true
+                local success, err = pcall(function() -- <--- [修正点 3]
+                    local character = localPlayer.Character -- <--- [修正点 2]
+                    if character and character:FindFirstChild("Head") then
+                        local head = character.Head
+                        local partOwner = head:FindFirstChild("PartOwner")
+                        if partOwner and localPlayer:FindFirstChild("IsHeld") and localPlayer.IsHeld.Value == true then -- <--- 修正: IsHeldチェック
+                            Struggle:FireServer()
+                            ReplicatedStorage.GameCorrectionEvents.StopAllVelocity:FireServer()
+                            for _, part in pairs(character:GetChildren()) do
+                                if part:IsA("BasePart") then
+                                    part.Anchored = true
+                                end
                             end
-                        end
-                        while localPlayer.IsHeld.Value do
-                            wait()
-                        end
-                        for _, part in pairs(character:GetChildren()) do
-                            if part:IsA("BasePart") then
-                                part.Anchored = false
+                            while localPlayer.IsHeld.Value do
+                                Struggle:FireServer() -- <--- 修正: ループ中もStruggle
+                                wait()
+                            end
+                            for _, part in pairs(character:GetChildren()) do
+                                if part:IsA("BasePart") then
+                                    part.Anchored = false
+                                end
                             end
                         end
                     end
-                end
+                end)
+                if not success then warn("Error in AutoStruggle: "..tostring(err)) end
             end)
         else
             if autoStruggleCoroutine then
@@ -1393,16 +1506,19 @@ DefenseTab:AddToggle({
     Callback = function(enabled)
         if enabled then
             antiKickCoroutine = RunService.Heartbeat:Connect(function()
-                local character = localPlayer.Character
-                if character and character:FindFirstChild("HumanoidRootPart") and character:FindFirstChild("HumanoidRootPart"):FindFirstChild("FirePlayerPart") then
-                    local partOwner = character:FindFirstChild("HumanoidRootPart"):FindFirstChild("FirePlayerPart"):FindFirstChild("PartOwner")
-                    if partOwner and partOwner.Value ~= localPlayer.Name then
-                        local args = {[1] = character:WaitForChild("HumanoidRootPart"), [2] = 0}
-                        game:GetService("ReplicatedStorage"):WaitForChild("CharacterEvents"):WaitForChild("RagdollRemote"):FireServer(unpack(args))
-                        wait(0.1)
-                        Struggle:FireServer()
+                local success, err = pcall(function() -- <--- [修正点 3]
+                    local character = localPlayer.Character -- <--- [修正点 2]
+                    if character and character:FindFirstChild("HumanoidRootPart") and character.HumanoidRootPart:FindFirstChild("FirePlayerPart") then
+                        local partOwner = character.HumanoidRootPart.FirePlayerPart:FindFirstChild("PartOwner")
+                        if partOwner and partOwner.Value ~= localPlayer.Name then
+                            local args = {[1] = character:WaitForChild("HumanoidRootPart"), [2] = 0}
+                            game:GetService("ReplicatedStorage"):WaitForChild("CharacterEvents"):WaitForChild("RagdollRemote"):FireServer(unpack(args))
+                            wait(0.1)
+                            Struggle:FireServer()
+                        end
                     end
-                end
+                end)
+                if not success then warn("Error in AntiKickGrab: "..tostring(err)) end
             end)
         else
             if antiKickCoroutine then
@@ -1453,35 +1569,42 @@ DefenseTab:AddToggle({
     Flag = "SelfDefenseAirSuspend",
     Callback = function(enabled)
         if enabled then
-            autoDefendCoroutine = coroutine.create(function()
-                while wait(0.02) do
-                    local character = localPlayer.Character
-                    if character and character:FindFirstChild("Head") then
-                        local head = character.Head
-                        local partOwner = head:FindFirstChild("PartOwner")
-                        if partOwner then
-                            local attacker = Players:FindFirstChild(partOwner.Value)
-                            if attacker and attacker.Character then
-                                Struggle:FireServer()
-                                SetNetworkOwner:FireServer(attacker.Character.Head or attacker.Character.Torso, attacker.Character.HumanoidRootPart.FirePlayerPart.CFrame)
-                                task.wait(0.1)
-                                local target = attacker.Character:FindFirstChild("Torso")
-                                if target then
-                                    local velocity = target:FindFirstChild("l") or Instance.new("BodyVelocity")
-                                    velocity.Name = "l"
-                                    velocity.Parent = target
-                                    velocity.Velocity = Vector3.new(0, 50, 0)
-                                    velocity.MaxForce = Vector3.new(0, math.huge, 0)
-                                    Debris:AddItem(velocity, 100)
+            if not autoDefendCoroutine or coroutine.status(autoDefendCoroutine) == "dead" then -- <--- 修正: 再開防止
+                autoDefendCoroutine = coroutine.create(function()
+                    while true do -- <--- 修正: enabledフラグではなくcoroutine.closeで制御
+                        local success, err = pcall(function() -- <--- [修正点 3]
+                            local character = localPlayer.Character -- <--- [修正点 2]
+                            if character and character:FindFirstChild("Head") then
+                                local head = character.Head
+                                local partOwner = head:FindFirstChild("PartOwner")
+                                if partOwner and partOwner.Value ~= localPlayer.Name then -- <--- 修正: 自分以外
+                                    local attacker = Players:FindFirstChild(partOwner.Value)
+                                    if attacker and attacker.Character and attacker.Character:FindFirstChild("HumanoidRootPart") and attacker.Character.HumanoidRootPart:FindFirstChild("FirePlayerPart") then -- <--- 修正: nilチェック追加
+                                        Struggle:FireServer()
+                                        SetNetworkOwner:FireServer(attacker.Character.Head or attacker.Character.Torso, attacker.Character.HumanoidRootPart.FirePlayerPart.CFrame)
+                                        task.wait(0.1)
+                                        local target = attacker.Character:FindFirstChild("Torso")
+                                        if target then
+                                            local velocity = target:FindFirstChild("l") or Instance.new("BodyVelocity")
+                                            velocity.Name = "l"
+                                            velocity.Parent = target
+                                            velocity.Velocity = Vector3.new(0, 50, 0)
+                                            velocity.MaxForce = Vector3.new(0, math.huge, 0)
+                                            Debris:AddItem(velocity, 100) -- <--- 修正: 100秒は長すぎるかも？ 5秒に変更
+                                            Debris:AddItem(velocity, 5)
+                                        end
+                                    end
                                 end
                             end
-                        end
+                        end)
+                        if not success then warn("Error in SelfDefenseAirSuspend: "..tostring(err)) end
+                        wait(0.02)
                     end
-                end
-            end)
-            coroutine.resume(autoDefendCoroutine)
+                end)
+                coroutine.resume(autoDefendCoroutine)
+            end
         else
-            if autoDefendCoroutine then
+            if autoDefendCoroutine and coroutine.status(autoDefendCoroutine) ~= "dead" then -- <--- 修正: ステータスチェック
                 coroutine.close(autoDefendCoroutine)
                 autoDefendCoroutine = nil
             end
@@ -1497,37 +1620,41 @@ DefenseTab:AddToggle({
     Flag = "SelfDefenseKick",
     Callback = function(enabled)
         if enabled then
-            autoDefendKickCoroutine = coroutine.create(function()
-                while enabled do
-                    local character = localPlayer.Character
-                    if character and character:FindFirstChild("HumanoidRootPart") then
-                        local humanoidRootPart = character.HumanoidRootPart
-                        local head = character:FindFirstChild("Head")
-                        if head then
-                            local partOwner = head:FindFirstChild("PartOwner")
-                            if partOwner then
-                                local attacker = Players:FindFirstChild(partOwner.Value)
-                                if attacker and attacker.Character then
-                                    Struggle:FireServer()
-                                    SetNetworkOwner:FireServer(attacker.Character.HumanoidRootPart.FirePlayerPart, attacker.Character.HumanoidRootPart.FirePlayerPart.CFrame)
-                                    task.wait(0.1)
-                                    if not attacker.Character.HumanoidRootPart.FirePlayerPart:FindFirstChild("BodyVelocity") then
-                                        local bodyVelocity = Instance.new("BodyVelocity")
-                                        bodyVelocity.Name = "BodyVelocity"
-                                        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                                        bodyVelocity.Velocity = Vector3.new(0, 20, 0)
-                                        bodyVelocity.Parent = attacker.Character.HumanoidRootPart.FirePlayerPart
+            if not autoDefendKickCoroutine or coroutine.status(autoDefendKickCoroutine) == "dead" then -- <--- 修正: 再開防止
+                autoDefendKickCoroutine = coroutine.create(function()
+                    while true do -- <--- 修正: enabledフラグではなくcoroutine.closeで制御
+                        local success, err = pcall(function() -- <--- [修正点 3]
+                            local character = localPlayer.Character -- <--- [修正点 2]
+                            if character and character:FindFirstChild("HumanoidRootPart") then
+                                local head = character:FindFirstChild("Head")
+                                if head then
+                                    local partOwner = head:FindFirstChild("PartOwner")
+                                    if partOwner and partOwner.Value ~= localPlayer.Name then -- <--- 修正: 自分以外
+                                        local attacker = Players:FindFirstChild(partOwner.Value)
+                                        if attacker and attacker.Character and attacker.Character:FindFirstChild("HumanoidRootPart") and attacker.Character.HumanoidRootPart:FindFirstChild("FirePlayerPart") then -- <--- 修正: nilチェック追加
+                                            Struggle:FireServer()
+                                            SetNetworkOwner:FireServer(attacker.Character.HumanoidRootPart.FirePlayerPart, attacker.Character.HumanoidRootPart.FirePlayerPart.CFrame)
+                                            task.wait(0.1)
+                                            if not attacker.Character.HumanoidRootPart.FirePlayerPart:FindFirstChild("BodyVelocity") then
+                                                local bodyVelocity = Instance.new("BodyVelocity")
+                                                bodyVelocity.Name = "BodyVelocity"
+                                                bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                                                bodyVelocity.Velocity = Vector3.new(0, 20, 0)
+                                                bodyVelocity.Parent = attacker.Character.HumanoidRootPart.FirePlayerPart
+                                            end
+                                        end
                                     end
                                 end
                             end
-                        end
+                        end)
+                        if not success then warn("Error in SelfDefenseKick: "..tostring(err)) end
+                        wait(0.02)
                     end
-                    wait(0.02)
-                end
-            end)
-            coroutine.resume(autoDefendKickCoroutine)
+                end)
+                coroutine.resume(autoDefendKickCoroutine)
+            end
         else
-            if autoDefendKickCoroutine then
+            if autoDefendKickCoroutine and coroutine.status(autoDefendKickCoroutine) ~= "dead" then -- <--- 修正: ステータスチェック
                 coroutine.close(autoDefendKickCoroutine)
                 autoDefendKickCoroutine = nil
             end
@@ -1562,34 +1689,44 @@ blobman1 = BlobmanTab:AddToggle({
     Default = false,
     Callback = function(enabled)
         if enabled then
-            loopTpCoroutine = coroutine.create(function()
-                local foundBlobman = false
-                for i, v in pairs(game.Workspace:GetDescendants()) do
-                    if v:IsA("Model") and v.Name == "CreatureBlobman" then
-                        if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, localPlayer.Character) then
-                            blobman = v
-                            foundBlobman = true
-                            break
+            if not loopTpCoroutine or coroutine.status(loopTpCoroutine) == "dead" then -- <--- 修正: 再開防止
+                loopTpCoroutine = coroutine.create(function()
+                    local foundBlobman = false
+                    local character = localPlayer.Character -- <--- [修正点 2]
+                    if not character then
+                        OrionLib:MakeNotification({Name = "Error", Content = "キャラクターが見つかりません", Image = "rbxassetid://4483345998", Time = 5})
+                        blobman1:Set(false)
+                        return
+                    end
+                    
+                    for i, v in pairs(game.Workspace:GetDescendants()) do
+                        if v:IsA("Model") and v.Name == "CreatureBlobman" then
+                            if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and isDescendantOf(v.VehicleSeat.SeatWeld.Part1, character) then
+                                blobman = v
+                                foundBlobman = true
+                                break
+                            end
                         end
                     end
-                end
-                if not foundBlobman then
-                    OrionLib:MakeNotification({
-                        Name = "Error",
-                        Content = "ブロブマンに乗ってからトグルをオンにしてください", 
-                        Image = "rbxassetid://4483345998", 
-                        Time = 5
-                    })
-                    blobman1:Set(false)
-                    blobman = nil
-                    return
-                end
-                currentLoopTpPlayerIndex = 1
-                loopTPFunction(blobman)
-            end)
-            coroutine.resume(loopTpCoroutine)
+                    
+                    if not foundBlobman then
+                        OrionLib:MakeNotification({
+                            Name = "Error",
+                            Content = "ブロブマンに乗ってからトグルをオンにしてください", 
+                            Image = "rbxassetid://4483345998", 
+                            Time = 5
+                        })
+                        blobman1:Set(false)
+                        blobman = nil
+                        return
+                    end
+                    currentLoopTpPlayerIndex = 1
+                    loopTPFunction(blobman)
+                end)
+                coroutine.resume(loopTpCoroutine)
+            end
         else
-            if loopTpCoroutine then
+            if loopTpCoroutine and coroutine.status(loopTpCoroutine) ~= "dead" then -- <--- 修正: ステータスチェック
                 coroutine.close(loopTpCoroutine)
                 loopTpCoroutine = nil
                 blobman = nil
@@ -1611,8 +1748,7 @@ BlobmanTab:AddSlider({
     end
 })
 
--- Line Tab (修正案適用)
--- Line機能の初期化チェック
+-- Line Tab
 if DataEvents and DataEvents:FindFirstChild("UpdateLineColorsEvent") then
     -- Line Tabの機能を有効化
     LineTab:AddSection({Name = "Special Presets"})
@@ -1726,12 +1862,15 @@ if DataEvents and DataEvents:FindFirstChild("UpdateLineColorsEvent") then
             if enabled then
                 task.spawn(function()
                     while lineLagEnabled and lineLagAllEnabled do
-                        for _, player in pairs(Players:GetPlayers()) do
-                            if player ~= localPlayer and lineLagEnabled and lineLagAllEnabled then
-                                CreateLineLag(player)
-                                wait(lineLagSpeed)
+                        local success, err = pcall(function() -- <--- [修正点 3]
+                            for _, player in pairs(Players:GetPlayers()) do
+                                if player ~= localPlayer and lineLagEnabled and lineLagAllEnabled then
+                                    CreateLineLag(player)
+                                    wait(lineLagSpeed)
+                                end
                             end
-                        end
+                        end)
+                        if not success then warn("Error in Line Lag (All): "..tostring(err)) end
                         wait(0.01)
                     end
                 end)
@@ -1781,7 +1920,10 @@ if DataEvents and DataEvents:FindFirstChild("UpdateLineColorsEvent") then
                 lineLagAllEnabled = false
                 task.spawn(function()
                     while lineLagEnabled and not lineLagAllEnabled and lineLagTarget do
-                        CreateLineLag(lineLagTarget)
+                        local success, err = pcall(function() -- <--- [修正点 3]
+                            CreateLineLag(lineLagTarget)
+                        end)
+                        if not success then warn("Error in Line Lag (Single): "..tostring(err)) end
                         wait(0.01)
                     end
                 end)
@@ -1823,7 +1965,7 @@ if DataEvents and DataEvents:FindFirstChild("UpdateLineColorsEvent") then
         Default = false,
         Callback = function(enabled)
             fartherReachEnabled = enabled
-            pcall(function()
+            local success, err = pcall(function() -- <--- [修正点 3]
                 if not localPlayer:FindFirstChild("FartherReach") then
                     local fartherReach = Instance.new("BoolValue")
                     fartherReach.Name = "FartherReach"
@@ -1833,6 +1975,8 @@ if DataEvents and DataEvents:FindFirstChild("UpdateLineColorsEvent") then
                 wait(0.1)
                 localPlayer.FartherReach.Value = enabled
             end)
+            if not success then warn("Error in FartherReach: "..tostring(err)) end
+            
             OrionLib:MakeNotification({
                 Name = "FartherReach",
                 Content = enabled and "Enabled!" or "Disabled!",
@@ -1852,11 +1996,12 @@ if DataEvents and DataEvents:FindFirstChild("UpdateLineColorsEvent") then
             if enabled then
                 task.spawn(function()
                     while invisibleLineEnabled do
-                        pcall(function()
+                        local success, err = pcall(function() -- <--- [修正点 3]
                             if CreateLine then
                                 CreateLine:FireServer()
                             end
                         end)
+                        if not success then warn("Error in Invisible Line: "..tostring(err)) end
                         wait(0.1)
                     end
                 end)
@@ -1877,7 +2022,7 @@ if DataEvents and DataEvents:FindFirstChild("UpdateLineColorsEvent") then
         end
     })
 else
-    -- DataEventsが見つからない場合の警告 (修正案適用)
+    -- DataEventsが見つからない場合の警告
     LineTab:AddParagraph("注意", "Line機能に必要なDataEventsが見つかりません")
 end
 
@@ -1919,7 +2064,11 @@ FunTab:AddButton({
         local midPoint = math.ceil(numDecoys / 2)
 
         local function updateDecoyPositions()
+            local character = localPlayer.Character -- <--- [修正点 2]
+            
             for index, decoy in pairs(decoys) do
+                if not decoy or not decoy.Parent then continue end -- <--- 修正: デコイ存在チェック
+                
                 local torso = decoy:FindFirstChild("Torso")
                 if torso then
                     local bodyPosition = torso:FindFirstChild("BodyPosition")
@@ -1927,11 +2076,11 @@ FunTab:AddButton({
                     if bodyPosition and bodyGyro then
                         local targetPosition
                         if followMode then
-                            if playerCharacter and playerCharacter:FindFirstChild("HumanoidRootPart") then
-                                targetPosition = playerCharacter.HumanoidRootPart.Position
+                            if character and character:FindFirstChild("HumanoidRootPart") then
+                                targetPosition = character.HumanoidRootPart.Position
                                 local offset = (index - midPoint) * decoyOffset
-                                local forward = playerCharacter.HumanoidRootPart.CFrame.LookVector
-                                local right = playerCharacter.HumanoidRootPart.CFrame.RightVector
+                                local forward = character.HumanoidRootPart.CFrame.LookVector
+                                local right = character.HumanoidRootPart.CFrame.RightVector
                                 targetPosition = targetPosition - forward * decoyOffset + right * offset
                             end
                         else
@@ -1947,7 +2096,7 @@ FunTab:AddButton({
                             local distance = (targetPosition - torso.Position).Magnitude
                             if distance > stopDistance then
                                 bodyPosition.Position = targetPosition
-                                if followMode then
+                                if followMode and character then -- <--- 修正: nilチェック
                                     bodyGyro.CFrame = CFrame.new(torso.Position, targetPosition)
                                 end
                             else
@@ -1977,7 +2126,11 @@ FunTab:AddButton({
                     updateDecoyPositions()
                 end)
                 table.insert(connections, connection)
-                SetNetworkOwner:FireServer(torso, playerCharacter.Head.CFrame)
+                
+                local character = localPlayer.Character -- <--- [修正点 2]
+                if character and character:FindFirstChild("Head") then
+                    SetNetworkOwner:FireServer(torso, character.Head.CFrame)
+                end
             end
         end
 
@@ -2048,45 +2201,46 @@ AuraTab:AddToggle({
     Save = true,
     Callback = function(enabled)
         if enabled then
-            auraCoroutine = coroutine.create(function()
-                while true do
-                    local success, err = pcall(function()
-                        local character = localPlayer.Character
-                        if character and character:FindFirstChild("Head") and character:FindFirstChild("HumanoidRootPart") then
-                            local head = character.Head
-                            local humanoidRootPart = character.HumanoidRootPart
+            if not auraCoroutine or coroutine.status(auraCoroutine) == "dead" then -- <--- 修正: 再開防止
+                auraCoroutine = coroutine.create(function()
+                    while true do -- <--- 修正: coroutine.closeで制御
+                        local success, err = pcall(function()
+                            local character = localPlayer.Character -- <--- [修正点 2]
+                            if character and character:FindFirstChild("Head") and character:FindFirstChild("HumanoidRootPart") then
+                                local humanoidRootPart = character.HumanoidRootPart
 
-                            for _, player in pairs(Players:GetPlayers()) do
-                                coroutine.wrap(function()
-                                    if player ~= localPlayer and player.Character then
-                                        local playerCharacter = player.Character
-                                        local playerTorso = playerCharacter:FindFirstChild("Torso")
-                                        if playerTorso then
-                                            local distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
-                                            if distance <= auraRadius then
-                                                SetNetworkOwner:FireServer(playerTorso, playerCharacter.HumanoidRootPart.FirePlayerPart.CFrame)
-                                                task.wait(0.1)
-                                                local velocity = playerTorso:FindFirstChild("l") or Instance.new("BodyVelocity", playerTorso)
-                                                velocity.Name = "l"
-                                                velocity.Velocity = Vector3.new(0, 50, 0)
-                                                velocity.MaxForce = Vector3.new(0, math.huge, 0)
-                                                Debris:AddItem(velocity, 100)
+                                for _, player in pairs(Players:GetPlayers()) do
+                                    coroutine.wrap(function()
+                                        if player ~= localPlayer and player.Character then
+                                            local playerCharacter = player.Character
+                                            local playerTorso = playerCharacter:FindFirstChild("Torso")
+                                            if playerTorso and playerCharacter:FindFirstChild("HumanoidRootPart") and playerCharacter.HumanoidRootPart:FindFirstChild("FirePlayerPart") then -- <--- 修正: nilチェック
+                                                local distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
+                                                if distance <= auraRadius then
+                                                    SetNetworkOwner:FireServer(playerTorso, playerCharacter.HumanoidRootPart.FirePlayerPart.CFrame)
+                                                    task.wait(0.1)
+                                                    local velocity = playerTorso:FindFirstChild("l") or Instance.new("BodyVelocity", playerTorso)
+                                                    velocity.Name = "l"
+                                                    velocity.Velocity = Vector3.new(0, 50, 0)
+                                                    velocity.MaxForce = Vector3.new(0, math.huge, 0)
+                                                    Debris:AddItem(velocity, 5) -- <--- 修正: 100秒 -> 5秒
+                                                end
                                             end
                                         end
-                                    end
-                                end)()
+                                    end)()
+                                end
                             end
+                        end)
+                        if not success then
+                            warn("Error in Air Suspend Aura: " .. tostring(err))
                         end
-                    end)
-                    if not success then
-                        warn("Error in Air Suspend Aura: " .. tostring(err))
+                        wait(0.02)
                     end
-                    wait(0.02)
-                end
-            end)
-            coroutine.resume(auraCoroutine)
+                end)
+                coroutine.resume(auraCoroutine)
+            end
         else
-            if auraCoroutine then
+            if auraCoroutine and coroutine.status(auraCoroutine) ~= "dead" then -- <--- 修正: ステータスチェック
                 coroutine.close(auraCoroutine)
                 auraCoroutine = nil
             end
@@ -2101,45 +2255,47 @@ AuraTab:AddToggle({
     Save = true,
     Callback = function(enabled)
         if enabled then
-            gravityCoroutine = coroutine.create(function()
-                while enabled do
-                    local success, err = pcall(function()
-                        local character = localPlayer.Character
-                        if character and character:FindFirstChild("HumanoidRootPart") then
-                            local humanoidRootPart = character.HumanoidRootPart
+            if not gravityCoroutine or coroutine.status(gravityCoroutine) == "dead" then -- <--- 修正: 再開防止
+                gravityCoroutine = coroutine.create(function()
+                    while true do -- <--- 修正: coroutine.closeで制御
+                        local success, err = pcall(function()
+                            local character = localPlayer.Character -- <--- [修正点 2]
+                            if character and character:FindFirstChild("HumanoidRootPart") then
+                                local humanoidRootPart = character.HumanoidRootPart
 
-                            for _, player in pairs(Players:GetPlayers()) do
-                                if player ~= localPlayer and player.Character then
-                                    local playerCharacter = player.Character
-                                    local playerTorso = playerCharacter:FindFirstChild("Torso")
-                                    if playerTorso then
-                                        local distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
-                                        if distance <= auraRadius then
-                                            SetNetworkOwner:FireServer(playerTorso, humanoidRootPart.FirePlayerPart.CFrame)
-                                            task.wait(0.1)
-                                            local force = playerTorso:FindFirstChild("GravityForce") or Instance.new("BodyForce")
-                                            force.Parent = playerTorso
-                                            force.Name = "GravityForce"
-                                            for _, part in ipairs(playerCharacter:GetDescendants()) do
-                                                if part:IsA("BasePart") then
-                                                    part.CanCollide = false
+                                for _, player in pairs(Players:GetPlayers()) do
+                                    if player ~= localPlayer and player.Character then
+                                        local playerCharacter = player.Character
+                                        local playerTorso = playerCharacter:FindFirstChild("Torso")
+                                        if playerTorso and playerCharacter:FindFirstChild("HumanoidRootPart") and playerCharacter.HumanoidRootPart:FindFirstChild("FirePlayerPart") then -- <--- 修正: nilチェック
+                                            local distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
+                                            if distance <= auraRadius then
+                                                SetNetworkOwner:FireServer(playerTorso, humanoidRootPart.FirePlayerPart.CFrame)
+                                                task.wait(0.1)
+                                                local force = playerTorso:FindFirstChild("GravityForce") or Instance.new("BodyForce")
+                                                force.Parent = playerTorso
+                                                force.Name = "GravityForce"
+                                                for _, part in ipairs(playerCharacter:GetDescendants()) do
+                                                    if part:IsA("BasePart") then
+                                                        part.CanCollide = false
+                                                    end
                                                 end
+                                                force.Force = Vector3.new(0, -1200, 0) 
                                             end
-                                            force.Force = Vector3.new(0, -1200, 0) 
                                         end
                                     end
                                 end
                             end
+                        end)
+                        if not success then
+                            warn("Error in Hell send Aura: " .. tostring(err))
                         end
-                    end)
-                    if not success then
-                        warn("Error in Hell send Aura: " .. tostring(err))
+                        wait(0.02)
                     end
-                    wait(0.02)
-                end
-            end)
-            coroutine.resume(gravityCoroutine)
-        elseif gravityCoroutine then
+                end)
+                coroutine.resume(gravityCoroutine)
+            end
+        elseif gravityCoroutine and coroutine.status(gravityCoroutine) ~= "dead" then -- <--- 修正: ステータスチェック
             coroutine.close(gravityCoroutine)
             gravityCoroutine = nil
         end
@@ -2152,59 +2308,96 @@ AuraTab:AddToggle({
     Default = false,
     Save = true,
     Callback = function(enabled)
-        if auraToggle == 1 then
-            if enabled then
+        if enabled then -- <--- 修正: enabledチェックを外側に
+            if not kickCoroutine or coroutine.status(kickCoroutine) == "dead" then -- <--- 修正: 再開防止
                 kickCoroutine = coroutine.create(function()
-                    while enabled do
-                        local success, err = pcall(function()
-                            local character = localPlayer.Character
-                            if character and character:FindFirstChild("HumanoidRootPart") then
-                                local humanoidRootPart = character.HumanoidRootPart
+                    while true do -- <--- 修正: coroutine.closeで制御
+                        if auraToggle == 1 then -- サイレント
+                            local success, err = pcall(function()
+                                local character = localPlayer.Character -- <--- [修正点 2]
+                                if character and character:FindFirstChild("HumanoidRootPart") then
+                                    local humanoidRootPart = character.HumanoidRootPart
 
-                                for _, player in pairs(Players:GetPlayers()) do
-                                    if player ~= localPlayer and player.Character then
-                                        local playerCharacter = player.Character
-                                        local playerTorso = playerCharacter:FindFirstChild("Head")
+                                    for _, player in pairs(Players:GetPlayers()) do
+                                        if player ~= localPlayer and player.Character then
+                                            local playerCharacter = player.Character
+                                            local playerTorso = playerCharacter:FindFirstChild("Head")
 
-                                        if playerTorso then
-                                            local distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
-                                            if distance <= auraRadius then
-                                                SetNetworkOwner:FireServer(playerCharacter:WaitForChild("HumanoidRootPart").FirePlayerPart, playerCharacter.HumanoidRootPart.FirePlayerPart.CFrame)
-                                                if not platforms[player] then
-                                                    local platform = playerCharacter:FindFirstChild("FloatingPlatform") or Instance.new("Part")
-                                                    platform.Name = "FloatingPlatform"
-                                                    platform.Size = Vector3.new(5, 2, 5)
-                                                    platform.Anchored = true
-                                                    platform.Transparency = 1
-                                                    platform.CanCollide = true
-                                                    platform.Parent = playerCharacter
-                                                    platforms[player] = platform
+                                            if playerTorso and playerCharacter:FindFirstChild("HumanoidRootPart") and playerCharacter.HumanoidRootPart:FindFirstChild("FirePlayerPart") then -- <--- 修正: nilチェック
+                                                local distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
+                                                if distance <= auraRadius then
+                                                    SetNetworkOwner:FireServer(playerCharacter.HumanoidRootPart.FirePlayerPart, playerCharacter.HumanoidRootPart.FirePlayerPart.CFrame)
+                                                    if not platforms[player] then
+                                                        local platform = playerCharacter:FindFirstChild("FloatingPlatform") or Instance.new("Part")
+                                                        platform.Name = "FloatingPlatform"
+                                                        platform.Size = Vector3.new(5, 2, 5)
+                                                        platform.Anchored = true
+                                                        platform.Transparency = 1
+                                                        platform.CanCollide = true
+                                                        platform.Parent = playerCharacter
+                                                        platforms[player] = platform
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                    for player, platform in pairs(platforms) do
+                                        if player.Character and player.Character.Humanoid and player.Character.Humanoid.Health > 1 and player.Character:FindFirstChild("HumanoidRootPart") then -- <--- 修正: nilチェック
+                                            local playerHumanoidRootPart = player.Character.HumanoidRootPart
+                                            platform.Position = playerHumanoidRootPart.Position - Vector3.new(0, 3.994, 0)
+                                        else
+                                            if platform then platform:Destroy() end 
+                                            platforms[player] = nil
+                                        end
+                                    end
+                                end
+                            end)
+                            if not success then
+                                warn("Error in Kick Aura (Silent): " .. tostring(err))
+                            end
+                        elseif auraToggle == 2 then -- 空
+                            local success, err = pcall(function()
+                                local character = localPlayer.Character -- <--- [修正点 2]
+                                if character and character:FindFirstChild("HumanoidRootPart") then
+                                    local humanoidRootPart = character.HumanoidRootPart
+
+                                    for _, player in pairs(Players:GetPlayers()) do
+                                        if player ~= localPlayer and player.Character then
+                                            local playerCharacter = player.Character
+                                            local playerTorso = playerCharacter:FindFirstChild("Head")
+
+                                            if playerTorso and playerCharacter:FindFirstChild("HumanoidRootPart") and playerCharacter.HumanoidRootPart:FindFirstChild("FirePlayerPart") then -- <--- 修正: nilチェック
+                                                local distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
+                                                if distance <= auraRadius then
+                                                    SetNetworkOwner:FireServer(playerCharacter.HumanoidRootPart.FirePlayerPart, playerCharacter.HumanoidRootPart.FirePlayerPart.CFrame)
+                                                    if not playerCharacter.HumanoidRootPart.FirePlayerPart:FindFirstChild("BodyVelocity") then
+                                                        local bodyVelocity = Instance.new("BodyVelocity")
+                                                        bodyVelocity.Name = "BodyVelocity"
+                                                        bodyVelocity.Velocity = Vector3.new(0, 20, 0) 
+                                                        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                                                        bodyVelocity.Parent = playerCharacter.HumanoidRootPart.FirePlayerPart
+                                                    end
                                                 end
                                             end
                                         end
                                     end
                                 end
-                                for player, platform in pairs(platforms) do
-                                    if player.Character and player.Character.Humanoid and player.Character.Humanoid.Health > 1 then
-                                        local playerHumanoidRootPart = player.Character.HumanoidRootPart
-                                        platform.Position = playerHumanoidRootPart.Position - Vector3.new(0, 3.994, 0)
-                                    else
-                                        if platform then platform:Destroy() end 
-                                        platforms[player] = nil
-                                    end
-                                end
+                            end)
+                            if not success then
+                                warn("Error in Kick Aura (Sky mode): " .. tostring(err))
                             end
-                        end)
-                        if not success then
-                            warn("Error in Kick Aura: " .. tostring(err))
                         end
                         wait(0.02)
                     end
                 end)
                 coroutine.resume(kickCoroutine)
-            elseif kickCoroutine then
+            end
+        else -- enabled == false
+            if kickCoroutine and coroutine.status(kickCoroutine) ~= "dead" then -- <--- 修正: ステータスチェック
                 coroutine.close(kickCoroutine)
                 kickCoroutine = nil
+            end
+            if auraToggle == 1 then -- サイレントモードだった場合のみプラットフォームを削除
                 for _, platform in pairs(platforms) do
                     if platform then
                         platform:Destroy()
@@ -2212,53 +2405,10 @@ AuraTab:AddToggle({
                 end
                 platforms = {}
             end
-        elseif auraToggle == 2 then
-            if enabled then
-                kickCoroutine = coroutine.create(function()
-                    while enabled do
-                        local success, err = pcall(function()
-                            local character = localPlayer.Character
-                            if character and character:FindFirstChild("HumanoidRootPart") then
-                                local humanoidRootPart = character.HumanoidRootPart
-
-                                for _, player in pairs(Players:GetPlayers()) do
-                                    if player ~= localPlayer and player.Character then
-                                        local playerCharacter = player.Character
-                                        local playerTorso = playerCharacter:FindFirstChild("Head")
-
-                                        if playerTorso then
-                                            local distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
-                                            if distance <= auraRadius then
-                                                SetNetworkOwner:FireServer(playerCharacter:WaitForChild("HumanoidRootPart").FirePlayerPart, playerCharacter.HumanoidRootPart.FirePlayerPart.CFrame)
-                                                if not playerCharacter.HumanoidRootPart.FirePlayerPart:FindFirstChild("BodyVelocity") then
-                                                    local bodyVelocity = Instance.new("BodyVelocity")
-                                                    bodyVelocity.Name = "BodyVelocity"
-                                                    bodyVelocity.Velocity = Vector3.new(0, 20, 0) 
-                                                    bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                                                    bodyVelocity.Parent = playerCharacter.HumanoidRootPart.FirePlayerPart
-                                                end
-                                            end
-                                        end
-                                    end
-                                end
-                            end
-                        end)
-                        if not success then
-                            warn("Error in Kick Aura (Sky mode): " .. tostring(err))
-                        end
-                        wait(0.02)
-                    end
-                end)
-                coroutine.resume(kickCoroutine)
-            else
-                if kickCoroutine then
-                    coroutine.close(kickCoroutine)
-                    kickCoroutine = nil
-                end
-            end
         end
     end
 })
+
 
 AuraTab:AddDropdown({
     Name = "キックの種類",
@@ -2271,6 +2421,10 @@ AuraTab:AddDropdown({
             auraToggle = 2 
         else 
             auraToggle = 1 
+            -- <--- 修正: モード変更時に「空」モードのBodyVelocityをクリーンアップ（必要なら）
+            -- ただし、現在のキックオーラロジックはトグルOFF時にクリーンアップしないため、
+            -- ここでもクリーンアップしない方が一貫性があるかもしれない。
+            -- もし「空」→「サイレント」に変更した際にBodyVelocityが残るのが問題なら、ここで全プレイヤーのFPPからBodyVelocityを削除する処理が必要。
         end
     end
 })
@@ -2282,51 +2436,68 @@ AuraTab:AddToggle({
     Save = true,
     Callback = function(enabled)
         if enabled then
-            poisonAuraCoroutine = coroutine.create(function()
-                while enabled do
-                    local success, err = pcall(function()
-                        local character = localPlayer.Character
-                        if character and character:FindFirstChild("HumanoidRootPart") then
-                            local humanoidRootPart = character.HumanoidRootPart
+            if not poisonAuraCoroutine or coroutine.status(poisonAuraCoroutine) == "dead" then -- <--- 修正: 再開防止
+                poisonAuraCoroutine = coroutine.create(function()
+                    while true do -- <--- 修正: coroutine.closeで制御
+                        local success, err = pcall(function()
+                            local character = localPlayer.Character -- <--- [修正点 2]
+                            if character and character:FindFirstChild("HumanoidRootPart") then
+                                local humanoidRootPart = character.HumanoidRootPart
 
-                            for _, player in pairs(Players:GetPlayers()) do
-                                if player ~= localPlayer and player.Character then
-                                    local playerCharacter = player.Character
-                                    local playerTorso = playerCharacter:FindFirstChild("Torso")
-                                    if playerTorso then
-                                        local distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
-                                        if distance <= auraRadius then
-                                            local head = playerCharacter:FindFirstChild("Head")
-                                            while distance <= auraRadius and player.Character and player.Character:FindFirstChild("Torso") do 
+                                for _, player in pairs(Players:GetPlayers()) do
+                                    if player ~= localPlayer and player.Character then
+                                        local playerCharacter = player.Character
+                                        local playerTorso = playerCharacter:FindFirstChild("Torso")
+                                        if playerTorso and playerCharacter:FindFirstChild("HumanoidRootPart") then -- <--- 修正: nilチェック
+                                            local distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
+                                            if distance <= auraRadius then
+                                                local head = playerCharacter:FindFirstChild("Head")
+                                                if not head then continue end -- <--- 修正: headチェック
+                                                
+                                                -- <--- 修正: この内部ループは危険。プレイヤーが範囲内にいる限り外側のループをブロックする
+                                                -- while distance <= auraRadius and player.Character and player.Character:FindFirstChild("Torso") do 
+                                                -- 
+                                                --     SetNetworkOwner:FireServer(playerTorso, playerCharacter.HumanoidRootPart.CFrame)
+                                                --     distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
+                                                --     for _, part in pairs(poisonHurtParts) do
+                                                --         part.Size = Vector3.new(1, 3, 1)
+                                                --         part.Transparency = 1
+                                                --         part.Position = head.Position
+                                                --     end
+                                                --     wait()
+                                                --     for _, part in pairs(poisonHurtParts) do
+                                                --         part.Position = Vector3.new(0, -200, 0)
+                                                --     end
+                                                -- end
+                                                
+                                                -- <--- 修正案: 内部ループを削除し、1回だけ実行する
                                                 SetNetworkOwner:FireServer(playerTorso, playerCharacter.HumanoidRootPart.CFrame)
-                                                distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
                                                 for _, part in pairs(poisonHurtParts) do
                                                     part.Size = Vector3.new(1, 3, 1)
                                                     part.Transparency = 1
                                                     part.Position = head.Position
                                                 end
-                                                wait()
+                                                task.wait() -- 1フレーム待機
                                                 for _, part in pairs(poisonHurtParts) do
                                                     part.Position = Vector3.new(0, -200, 0)
                                                 end
-                                            end
-                                            for _, part in pairs(poisonHurtParts) do
-                                                part.Position = Vector3.new(0, -200, 0)
+                                                -- <--- 修正案ここまで
+                                                
                                             end
                                         end
                                     end
                                 end
                             end
+                        end)
+                        if not success then
+                            warn("Error in Poison Aura: " .. tostring(err))
                         end
-                    end)
-                    if not success then
-                        warn("Error in Poison Aura: " .. tostring(err))
+                        wait(0.02)
                     end
-                    wait(0.02)
-                end
-            end)
-            coroutine.resume(poisonAuraCoroutine)
-        elseif poisonAuraCoroutine then
+                end)
+                coroutine.resume(poisonAuraCoroutine)
+            end
+        elseif poisonAuraCoroutine and coroutine.status(poisonAuraCoroutine) ~= "dead" then -- <--- 修正: ステータスチェック
             coroutine.close(poisonAuraCoroutine)
             for _, part in pairs(poisonHurtParts) do
                 part.Position = Vector3.new(0, -200, 0)
@@ -2345,23 +2516,28 @@ CharacterTab:AddToggle({
     Flag = "CrouchSpeed",
     Callback = function(enabled)
         if enabled then
-            crouchSpeedCoroutine = coroutine.create(function()
-                while true do
-                    pcall(function()
-                        if not playerCharacter or not playerCharacter:FindFirstChild("Humanoid") then return end 
-                        if playerCharacter.Humanoid.WalkSpeed == 5 then
-                            playerCharacter.Humanoid.WalkSpeed = crouchWalkSpeed
-                        end
-                    end)
-                    wait()
-                end
-            end)
-            coroutine.resume(crouchSpeedCoroutine)
-        elseif crouchSpeedCoroutine then
+            if not crouchSpeedCoroutine or coroutine.status(crouchSpeedCoroutine) == "dead" then -- <--- 修正: 再開防止
+                crouchSpeedCoroutine = coroutine.create(function()
+                    while true do -- <--- 修正: coroutine.closeで制御
+                        local success, err = pcall(function()
+                            local character = localPlayer.Character -- <--- [修正点 2]
+                            if not character or not character:FindFirstChild("Humanoid") then return end 
+                            if character.Humanoid.WalkSpeed == 5 then
+                                character.Humanoid.WalkSpeed = crouchWalkSpeed
+                            end
+                        end)
+                        if not success then warn("Error in CrouchSpeed: "..tostring(err)) end
+                        wait()
+                    end
+                end)
+                coroutine.resume(crouchSpeedCoroutine)
+            end
+        elseif crouchSpeedCoroutine and coroutine.status(crouchSpeedCoroutine) ~= "dead" then -- <--- 修正: ステータスチェック
             coroutine.close(crouchSpeedCoroutine)
             crouchSpeedCoroutine = nil
-            if playerCharacter and playerCharacter:FindFirstChild("Humanoid") then 
-                playerCharacter.Humanoid.WalkSpeed = 16
+            local character = localPlayer.Character -- <--- [修正点 2]
+            if character and character:FindFirstChild("Humanoid") and character.Humanoid.WalkSpeed == crouchWalkSpeed then -- <--- 修正: 元に戻す
+                character.Humanoid.WalkSpeed = 16
             end
         end
     end
@@ -2390,23 +2566,28 @@ CharacterTab:AddToggle({
     Color = Color3.fromRGB(240, 0, 0),
     Callback = function(enabled)
         if enabled then
-            crouchJumpCoroutine = coroutine.create(function()
-                while true do
-                    pcall(function()
-                        if not playerCharacter or not playerCharacter:FindFirstChild("Humanoid") then return end 
-                        if playerCharacter.Humanoid.JumpPower == 12 then
-                            playerCharacter.Humanoid.JumpPower = crouchJumpPower
-                        end
-                    end)
-                    wait()
-                end
-            end)
-            coroutine.resume(crouchJumpCoroutine)
-        elseif crouchJumpCoroutine then
+            if not crouchJumpCoroutine or coroutine.status(crouchJumpCoroutine) == "dead" then -- <--- 修正: 再開防止
+                crouchJumpCoroutine = coroutine.create(function()
+                    while true do -- <--- 修正: coroutine.closeで制御
+                        local success, err = pcall(function()
+                            local character = localPlayer.Character -- <--- [修正点 2]
+                            if not character or not character:FindFirstChild("Humanoid") then return end 
+                            if character.Humanoid.JumpPower == 12 then
+                                character.Humanoid.JumpPower = crouchJumpPower
+                            end
+                        end)
+                        if not success then warn("Error in CrouchJumpPower: "..tostring(err)) end
+                        wait()
+                    end
+                end)
+                coroutine.resume(crouchJumpCoroutine)
+            end
+        elseif crouchJumpCoroutine and coroutine.status(crouchJumpCoroutine) ~= "dead" then -- <--- 修正: ステータスチェック
             coroutine.close(crouchJumpCoroutine)
             crouchJumpCoroutine = nil
-            if playerCharacter and playerCharacter:FindFirstChild("Humanoid") then 
-                playerCharacter.Humanoid.JumpPower = 24
+            local character = localPlayer.Character -- <--- [修正点 2]
+            if character and character:FindFirstChild("Humanoid") and character.Humanoid.JumpPower == crouchJumpPower then -- <--- 修正: 元に戻す
+                character.Humanoid.JumpPower = 24
             end
         end
     end
@@ -2440,7 +2621,7 @@ ExplosionTab:AddDropdown({
 ExplosionTab:AddSlider({
     Name = "Max amount of missiles",
     Min = 1,
-    Max = localPlayer.ToysLimitCap.Value / 10,
+    Max = (localPlayer:FindFirstChild("ToysLimitCap") and localPlayer.ToysLimitCap.Value / 10) or 9, -- <--- 修正: nilチェック
     Color = Color3.fromRGB(240, 0, 0),
     ValueName = "Missiles",
     Increment = 1,
@@ -2481,7 +2662,7 @@ KeybindSection:AddBind({
             if target.Name == "FirePlayerPart" then
                 character = target.Parent.Parent
             end
-            if character:IsA("Model") and character:FindFirstChildOfClass("Humanoid") then
+            if character:IsA("Model") and character:FindFirstChildOfClass("Humanoid") and character:FindFirstChild("Torso") and character:FindFirstChild("HumanoidRootPart") then -- <--- 修正: nilチェック
                 SetNetworkOwner:FireServer(character.HumanoidRootPart, character.HumanoidRootPart.CFrame)
                 for _, part in ipairs(character:GetDescendants()) do
                     if part:IsA("BasePart") or part:IsA("Part") then
@@ -2495,7 +2676,9 @@ KeybindSection:AddBind({
                 bodyVelocity.Velocity = Vector3.new(0, -40, 0) 
                 character.Torso.CanCollide = false
                 task.wait(1)
-                character.Torso.CanCollide = false
+                if character and character:FindFirstChild("Torso") then -- <--- 修正: 存在チェック
+                    character.Torso.CanCollide = false
+                end
             end
         end
     end
@@ -2515,7 +2698,7 @@ KeybindSection:AddBind({
             if target.Name == "FirePlayerPart" then
                 character = target.Parent.Parent
             end
-            if character:IsA("Model") and character:FindFirstChildOfClass("Humanoid") then
+            if character:IsA("Model") and character:FindFirstChildOfClass("Humanoid") and character:FindFirstChild("HumanoidRootPart") and character.HumanoidRootPart:FindFirstChild("FirePlayerPart") then -- <--- 修正: nilチェック
                 if kickMode == 1 then   
                     SetNetworkOwner:FireServer(character.HumanoidRootPart.FirePlayerPart, character.HumanoidRootPart.FirePlayerPart.CFrame)
                     local bodyVelocity = Instance.new("BodyVelocity")
@@ -2571,7 +2754,7 @@ KeybindSection:AddBind({
             if target.Name == "FirePlayerPart" then
                 character = target.Parent.Parent
             end
-            if character:IsA("Model") and character:FindFirstChildOfClass("Humanoid") then
+            if character:IsA("Model") and character:FindFirstChildOfClass("Humanoid") and character:FindFirstChild("Torso") and character:FindFirstChild("Head") then -- <--- 修正: nilチェック
                 SetNetworkOwner:FireServer(character.HumanoidRootPart, character.HumanoidRootPart.CFrame)
                 SetNetworkOwner:FireServer(character.Head, character.Head.CFrame)
                 for _, motor in pairs(character.Torso:GetChildren()) do
@@ -2579,7 +2762,9 @@ KeybindSection:AddBind({
                     if motor:IsA('Motor6D') then motor:Destroy() end
                 end
                 task.wait(0.5)
-                SetNetworkOwner:FireServer(character.Head, character.Head.CFrame)
+                if character and character:FindFirstChild("Head") then -- <--- 修正: 存在チェック
+                    SetNetworkOwner:FireServer(character.Head, character.Head.CFrame)
+                end
             end
         end
     end
@@ -2603,11 +2788,14 @@ KeybindSection:AddBind({
             if target.Name == "FirePlayerPart" then
                 character = target.Parent.Parent
             end
-            if character:IsA("Model") and character:FindFirstChildOfClass("Humanoid") then
+            if character:IsA("Model") and character:FindFirstChildOfClass("Humanoid") and character:FindFirstChild("Head") and character:FindFirstChild("HumanoidRootPart") then -- <--- 修正: nilチェック
+                if not toysFolder then return end
                 if not toysFolder:FindFirstChild("Campfire") then
                     spawnItem("Campfire", Vector3.new(-72.9304581, -5.96906614, -265.543732))
                 end
-                local campfire = toysFolder:WaitForChild("Campfire") 
+                local campfire = toysFolder:WaitForChild("Campfire", 2) -- <--- 修正: 待機
+                if not campfire then return end
+                
                 local firePlayerPart
                 SetNetworkOwner:FireServer(character.HumanoidRootPart, character.HumanoidRootPart.CFrame)
                 for _, part in pairs(campfire:GetChildren()) do
@@ -2617,6 +2805,8 @@ KeybindSection:AddBind({
                         break
                     end
                 end
+                if not firePlayerPart then return end -- <--- 修正: nilチェック
+                
                 firePlayerPart.Position = character.Head.Position or character.HumanoidRootPart.Position
                 task.wait(0.5)
                 firePlayerPart.Position = Vector3.new(0, -50, 0)
@@ -2638,6 +2828,8 @@ KeybindSection2:AddBind({
             OrionLib:MakeNotification({Name = "Missing toy", Content = "あなたは爆弾を持っていません ", Image = "rbxassetid://4483345998", Time = 3})
             return
         end
+        if not toysFolder then return end
+        
         local connection
         connection = toysFolder.ChildAdded:Connect(function(child)
             if child.Name == "BombMissile" then
@@ -2668,7 +2860,13 @@ KeybindSection2:AddBind({
                 end
             end
         end)
-        spawnItemCf("BombMissile", playerCharacter.Head.CFrame or playerCharacter.HumanoidRootPart.CFrame)
+        
+        local character = localPlayer.Character -- <--- [修正点 2]
+        if not character or not (character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")) then
+            connection:Disconnect()
+            return 
+        end
+        spawnItemCf("BombMissile", character.Head.CFrame or character.HumanoidRootPart.CFrame)
         wait(1)
         connection:Disconnect()
     end
@@ -2685,6 +2883,7 @@ KeybindSection2:AddBind({
             OrionLib:MakeNotification({Name = "Missing toy", Content = "You do not own the BombMissile toy. ", Image = "rbxassetid://4483345998", Time = 3})
             return
         end
+        if not toysFolder then return end
         
         local connection
         connection = toysFolder.ChildAdded:Connect(function(child)
@@ -2704,7 +2903,13 @@ KeybindSection2:AddBind({
                 end
             end
         end)
-        spawnItemCf("BombMissile", playerCharacter.Head.CFrame or playerCharacter.HumanoidRootPart.CFrame)
+        
+        local character = localPlayer.Character -- <--- [修正点 2]
+        if not character or not (character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")) then
+            connection:Disconnect()
+            return 
+        end
+        spawnItemCf("BombMissile", character.Head.CFrame or character.HumanoidRootPart.CFrame)
     end
 })
 
@@ -2719,6 +2924,8 @@ KeybindSection2:AddBind({
             OrionLib:MakeNotification({Name = "Missing toy", Content = "You do not own the FireworkMissile toy. ", Image = "rbxassetid://4483345998", Time = 3})
             return
         end
+        if not toysFolder then return end
+        
         local connection
         connection = toysFolder.ChildAdded:Connect(function(child)
             if child.Name == "FireworkMissile" then
@@ -2749,7 +2956,13 @@ KeybindSection2:AddBind({
                 end
             end
         end)
-        spawnItemCf("FireworkMissile", playerCharacter.Head.CFrame or playerCharacter.HumanoidRootPart.CFrame)
+        
+        local character = localPlayer.Character -- <--- [修正点 2]
+        if not character or not (character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")) then
+            connection:Disconnect()
+            return 
+        end
+        spawnItemCf("FireworkMissile", character.Head.CFrame or character.HumanoidRootPart.CFrame)
         wait(1)
         connection:Disconnect()
     end
@@ -2779,8 +2992,12 @@ KeybindSection2:AddBind({
             OrionLib:MakeNotification({Name = "No bombs", Content = "There are no cached bombs to explode", Image = "rbxassetid://4483345998", Time = 2})
             return
         end
+        
+        local character = localPlayer.Character -- <--- [修正点 2]
+        if not character or not (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("PrimaryPart")) then return end
 
         local bomb = table.remove(bombList, 1)
+        if not bomb or not bomb.Parent then return end -- <--- 修正: 爆弾が存在するか確認
 
         local args = {
             [1] = {
@@ -2793,9 +3010,9 @@ KeybindSection2:AddBind({
                 ["ImpactSpeed"] = 100,
                 ["ExplodesByPointy"] = false,
                 ["DestroysModel"] = false,
-                    ["PositionPart"] = localPlayer.Character.HumanoidRootPart or localPlayer.Character.PrimaryPart
+                    ["PositionPart"] = character.HumanoidRootPart or character.PrimaryPart
             },
-            [2] = localPlayer.Character.HumanoidRootPart.Position or localPlayer.Character.PrimaryPart.Position
+            [2] = character.HumanoidRootPart.Position or character.PrimaryPart.Position
         }
         ReplicatedStorage:WaitForChild("BombEvents"):WaitForChild("BombExplode"):FireServer(unpack(args))
     end
@@ -2812,24 +3029,30 @@ KeybindSection2:AddBind({
             OrionLib:MakeNotification({Name = "No bombs", Content = "There are no cached bombs to explode", Image = "rbxassetid://4483345998", Time = 2})
             return
         end
+        
+        local character = localPlayer.Character -- <--- [修正点 2]
+        if not character or not (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("PrimaryPart")) then return end
+        
         for i = #bombList, 1, -1 do
             local bomb = table.remove(bombList, i)
-            local args = {
-                [1] = {
-                    ["Radius"] = 17.5,
-                    ["TimeLength"] = 2,
-                    ["Hitbox"] = bomb.PartHitDetector,
-                    ["ExplodesByFire"] = false,
-                    ["MaxForcePerStudSquared"] = 225,
-                    ["Model"] = bomb,
-                    ["ImpactSpeed"] = 100,
-                    ["ExplodesByPointy"] = false,
-                    ["DestroysModel"] = false,
-                    ["PositionPart"] = localPlayer.Character.HumanoidRootPart or localPlayer.Character.PrimaryPart
-                },
-                [2] = localPlayer.Character.HumanoidRootPart.Position or localPlayer.Character.PrimaryPart.Position
-            }
-            ReplicatedStorage:WaitForChild("BombEvents"):WaitForChild("BombExplode"):FireServer(unpack(args))
+            if bomb and bomb.Parent then -- <--- 修正: 爆弾が存在するか確認
+                local args = {
+                    [1] = {
+                        ["Radius"] = 17.5,
+                        ["TimeLength"] = 2,
+                        ["Hitbox"] = bomb.PartHitDetector,
+                        ["ExplodesByFire"] = false,
+                        ["MaxForcePerStudSquared"] = 225,
+                        ["Model"] = bomb,
+                        ["ImpactSpeed"] = 100,
+                        ["ExplodesByPointy"] = false,
+                        ["DestroysModel"] = false,
+                        ["PositionPart"] = character.HumanoidRootPart or character.PrimaryPart
+                    },
+                    [2] = character.HumanoidRootPart.Position or character.PrimaryPart.Position
+                }
+                ReplicatedStorage:WaitForChild("BombEvents"):WaitForChild("BombExplode"):FireServer(unpack(args))
+            end
         end
     end
 })
@@ -2851,24 +3074,28 @@ KeybindSection2:AddBind({
             return 
         end
         local char = nearest.Character
+        if not (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("PrimaryPart")) then return end -- <--- 修正: ターゲットのパーツチェック
+        
         for i = #bombList, 1, -1 do
             local bomb = table.remove(bombList, i)
-            local args = {
-                [1] = {
-                    ["Radius"] = 17.5,
-                    ["TimeLength"] = 2,
-                    ["Hitbox"] = bomb.PartHitDetector,
-                    ["ExplodesByFire"] = false,
-                    ["MaxForcePerStudSquared"] = 225,
-                    ["Model"] = bomb,
-                    ["ImpactSpeed"] = 100,
-                    ["ExplodesByPointy"] = false,
-                    ["DestroysModel"] = false,
-                    ["PositionPart"] = char.HumanoidRootPart or char.Torso or char.PrimaryPart
-                },
-                [2] = char.HumanoidRootPart.Position or char.Torso.Position or char.PrimaryPart.Position
-            }
-            ReplicatedStorage:WaitForChild("BombEvents"):WaitForChild("BombExplode"):FireServer(unpack(args))
+            if bomb and bomb.Parent then -- <--- 修正: 爆弾が存在するか確認
+                local args = {
+                    [1] = {
+                        ["Radius"] = 17.5,
+                        ["TimeLength"] = 2,
+                        ["Hitbox"] = bomb.PartHitDetector,
+                        ["ExplodesByFire"] = false,
+                        ["MaxForcePerStudSquared"] = 225,
+                        ["Model"] = bomb,
+                        ["ImpactSpeed"] = 100,
+                        ["ExplodesByPointy"] = false,
+                        ["DestroysModel"] = false,
+                        ["PositionPart"] = char.HumanoidRootPart or char.Torso or char.PrimaryPart
+                    },
+                    [2] = char.HumanoidRootPart.Position or char.Torso.Position or char.PrimaryPart.Position
+                }
+                ReplicatedStorage:WaitForChild("BombEvents"):WaitForChild("BombExplode"):FireServer(unpack(args))
+            end
         end
     end
 })
@@ -2883,6 +3110,8 @@ KeybindSection2:AddToggle({
             lightbitparts = {}
             bodyPositions = {}
             alignOrientations = {}
+            
+            if not toysFolder then return end
             
             for i, v in pairs(toysFolder:GetChildren()) do
                 if v.Name ~= "ToyNumber" and v.PrimaryPart then
@@ -2920,17 +3149,18 @@ KeybindSection2:AddToggle({
             end
             
             lightorbitcon = RunService.Heartbeat:Connect(function()
-                if not localPlayer.Character or not localPlayer.Character.HumanoidRootPart then 
+                local character = localPlayer.Character -- <--- [修正点 2]
+                if not character or not character.HumanoidRootPart then 
                     return 
                 end
                 lightbitoffset = lightbitoffset + lightbit
-                lightbitpos = U.GetSurroundingVectors(localPlayer.Character.HumanoidRootPart.Position, usingradius, #lightbitparts, lightbitoffset)
+                lightbitpos = U.GetSurroundingVectors(character.HumanoidRootPart.Position, usingradius, #lightbitparts, lightbitoffset)
 
                 for i, v in ipairs(lightbitpos) do
                     if bodyPositions[i] and alignOrientations[i] and lightbitparts[i] then
                         bodyPositions[i].Position = v
                         local part = lightbitparts[i]
-                        local lookAtCFrame = CFrame.lookAt(part.Position, localPlayer.Character.HumanoidRootPart.Position)
+                        local lookAtCFrame = CFrame.lookAt(part.Position, character.HumanoidRootPart.Position)
                         alignOrientations[i].CFrame = lookAtCFrame
                     end
                 end
@@ -3028,13 +3258,15 @@ DevTab:AddToggle({
     Save = true,
     Callback = function(enabled)
         if enabled then
-            ragdollAllCoroutine = coroutine.create(ragdollAll)
-            coroutine.resume(ragdollAllCoroutine)
+            if not ragdollAllCoroutine or coroutine.status(ragdollAllCoroutine) == "dead" then -- <--- 修正: 再開防止
+                ragdollAllCoroutine = coroutine.create(ragdollAll)
+                coroutine.resume(ragdollAllCoroutine)
+            end
         else
-            if ragdollAllCoroutine then
+            if ragdollAllCoroutine and coroutine.status(ragdollAllCoroutine) ~= "dead" then -- <--- 修正: ステータスチェック
                 coroutine.close(ragdollAllCoroutine)
                 ragdollAllCoroutine = nil
-                if toysFolder:FindFirstChild("FoodBanana") then
+                if toysFolder and toysFolder:FindFirstChild("FoodBanana") then -- <--- 修正: クリーンアップ
                     DestroyT(toysFolder:FindFirstChild("FoodBanana"))
                 end
             end
@@ -3042,47 +3274,52 @@ DevTab:AddToggle({
     end
 })
 
--- 自動で座る機能 (修正案適用)
+-- 自動で座る機能
 RunService.Heartbeat:Connect(function(dt)
     if AutoSitEnabled then
-        local Character = localPlayer.Character
-        -- キャラクター、Humanoid、HRPが存在し、かつ座っていない場合のみ処理
-        if Character and Character:FindFirstChild("Humanoid") and Character.Humanoid.SeatPart == nil and Character:FindFirstChild("HumanoidRootPart") then
-            
-            local foundBlobman
-            
-            -- 周囲のブロブマンを探索
-            for _, v in pairs(game.Workspace:GetDescendants()) do
-                if v:IsA("Model") and v.Name == "CreatureBlobman" and v:FindFirstChild("VehicleSeat") then
-                    -- 誰も座っていないブロブマンが見つかったらそれをターゲットにする
-                    if v.VehicleSeat.Occupant == nil then
-                        foundBlobman = v
-                        break
+        local success, err = pcall(function() -- <--- [修正点 3]
+            local Character = localPlayer.Character -- <--- [修正点 2]
+            -- キャラクター、Humanoid、HRPが存在し、かつ座っていない場合のみ処理
+            if Character and Character:FindFirstChild("Humanoid") and Character.Humanoid.SeatPart == nil and Character:FindFirstChild("HumanoidRootPart") then
+                
+                local foundBlobman
+                
+                -- 周囲のブロブマンを探索
+                for _, v in pairs(game.Workspace:GetDescendants()) do
+                    if v:IsA("Model") and v.Name == "CreatureBlobman" and v:FindFirstChild("VehicleSeat") then
+                        -- 誰も座っていないブロブマンが見つかったらそれをターゲットにする
+                        if v.VehicleSeat.Occupant == nil then
+                            foundBlobman = v
+                            break
+                        end
                     end
                 end
-            end
 
-            if foundBlobman then
-                -- 見つかったら座る
-                foundBlobman.VehicleSeat:Sit(Character.Humanoid)
-            elseif not isSpawningBlobmanForSit and (tick() - lastSpawnAttempt) > SPAWN_COOLDOWN then -- クールダウンチェック (修正案適用)
-                -- 見つからない場合、スポーン処理を開始 (連打防止 + クールダウン)
-                isSpawningBlobmanForSit = true
-                lastSpawnAttempt = tick() -- 最終試行時間を更新 (修正案適用)
-                spawnItemCf("CreatureBlobman", Character.HumanoidRootPart.CFrame)
-                
-                -- スポーンして認識されるまでの遅延 (1.5秒後にフラグ解除)
-                task.delay(1.5, function()
-                    isSpawningBlobmanForSit = false
-                end)
+                if foundBlobman then
+                    -- 見つかったら座る
+                    foundBlobman.VehicleSeat:Sit(Character.Humanoid)
+                elseif not isSpawningBlobmanForSit and (tick() - lastSpawnAttempt) > SPAWN_COOLDOWN then -- クールダウンチェック
+                    -- 見つからない場合、スポーン処理を開始 (連打防止 + クールダウン)
+                    isSpawningBlobmanForSit = true
+                    lastSpawnAttempt = tick() -- 最終試行時間を更新
+                    spawnItemCf("CreatureBlobman", Character.HumanoidRootPart.CFrame)
+                    
+                    -- スポーンして認識されるまでの遅延 (1.5秒後にフラグ解除)
+                    task.delay(1.5, function()
+                        isSpawningBlobmanForSit = false
+                    end)
+                end
             end
-        end
+        end)
+        if not success then warn("Error in AutoSit: "..tostring(err)) end
     end
 end)
 
 game:GetService("Players").PlayerRemoving:Connect(function(player)
     if player == localPlayer then
-        if loopTpCoroutine then coroutine.close(loopTpCoroutine) end
+        if loopTpCoroutine and coroutine.status(loopTpCoroutine) ~= "dead" then -- <--- 修正: ステータスチェック
+            coroutine.close(loopTpCoroutine) 
+        end
     end
 end)
 
