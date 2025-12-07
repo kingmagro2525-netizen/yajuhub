@@ -1,6 +1,3 @@
--- 野獣ハブ (Yajuu Hub) - Enhanced Edition
--- ベース: 野獣ハブ + FTAP防御機能 + FOV + フレンド自動除外
-
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -8,7 +5,6 @@ local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
 
--- ■■■ 新規追加: アンチラグ用フック (FTAPより移植) ■■■
 local antiLagEnabled = false
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
@@ -20,7 +16,6 @@ oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     end
     return oldNamecall(self, ...)
 end)
--- ■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 
 local GrabEvents = ReplicatedStorage:WaitForChild("GrabEvents", 5)
 local MenuToys = ReplicatedStorage:WaitForChild("MenuToys", 5)
@@ -42,7 +37,6 @@ localPlayer.CharacterAdded:Connect(function(character)
     playerCharacter = character
 end)
 
--- 変数定義
 local AutoRecoverDroppedPartsCoroutine
 local connectionBombReload
 local reloadBombCoroutine
@@ -91,10 +85,9 @@ local lighBitSpeedCoroutine
 local tpAllCoroutine
 local autoDefendKickCoroutine 
 
--- 新規追加変数
 local antiVoidCoroutine
 local antiFlingCoroutine
-local excludeFriends = true -- フレンド除外デフォルトON
+local excludeFriends = true 
 
 local AutoSitEnabled = false
 local loopTpCoroutine
@@ -144,12 +137,10 @@ local function parsePlayerName(formattedName)
     return playerName or formattedName
 end
 
--- ■■■ 修正: ホワイトリスト判定関数 (フレンド除外対応) ■■■
 function isWhitelisted(player)
     if not player then return false end
     if player == localPlayer then return true end
     
-    -- フレンド自動除外処理
     if excludeFriends then
         local success, isFriend = pcall(function()
             return localPlayer:IsFriendsWith(player.UserId)
@@ -161,7 +152,6 @@ function isWhitelisted(player)
 
     return whitelistedPlayers[player.Name]
 end
--- ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 
 function updateWhitelistLabel()
     if not whitelistLabel then return end
@@ -1142,12 +1132,12 @@ local function loopTPFunction(blobman)
 end
 
 local Window = OrionLib:MakeWindow({
-    Name = "野獣ハブ + Gemini統合", 
+    Name = "野獣ハブ", 
     HidePremium = false,
     SaveConfig = true,
     ConfigFolder = "YajuuHubGemini",
     IntroEnabled = true,
-    IntroText = "野獣ハブ Enhanced", 
+    IntroText = "野獣ハブ", 
     IntroIcon = "rbxassetid://4483345998",
     Icon = "rbxassetid://4483345998"
 })
@@ -1212,9 +1202,8 @@ local WhitelistSec = WhitelistTab:AddSection({Name = "ホワイトリスト選�
 
 WhitelistSec:AddParagraph("ホワイトリストに入れるプレイヤーを選択します")
 
--- ■■■ 新規追加: フレンド除外トグル ■■■
 WhitelistSec:AddToggle({
-    Name = "フレンドを自動除外",
+    Name = "フレンド自動除外",
     Default = true,
     Save = true,
     Flag = "AutoExcludeFriends",
@@ -1222,7 +1211,6 @@ WhitelistSec:AddToggle({
         excludeFriends = enabled
     end
 })
--- ■■■■■■■■■■■■■■■■■■■■■
 
 whitelistDropdown = WhitelistSec:AddDropdown({
     Name = "プレイヤー選択",
@@ -1548,10 +1536,8 @@ ObjectGrabTab:AddButton({
 
 DefenseTab:AddLabel("グラブディフェンス")
 
--- ■■■ 新規追加: アンチラグ、アンチヴォイド、アンチフライング ■■■
-
 DefenseTab:AddToggle({
-    Name = "アンチラグ (Look Event Block)",
+    Name = "アンチラグ",
     Default = false,
     Save = true,
     Color = Color3.fromRGB(240, 0, 0),
@@ -1562,7 +1548,7 @@ DefenseTab:AddToggle({
 })
 
 DefenseTab:AddToggle({
-    Name = "アンチヴォイド (落下自動復帰)",
+    Name = "アンチヴォイド",
     Default = false,
     Save = true,
     Color = Color3.fromRGB(240, 0, 0),
@@ -1585,7 +1571,7 @@ DefenseTab:AddToggle({
 })
 
 DefenseTab:AddToggle({
-    Name = "アンチフライング (速度制限)",
+    Name = "アンチフライング",
     Default = false,
     Save = true,
     Color = Color3.fromRGB(240, 0, 0),
@@ -1606,8 +1592,6 @@ DefenseTab:AddToggle({
         end
     end
 })
-
--- ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 
 DefenseTab:AddToggle({
     Name = "アンチグラブ",
@@ -2465,9 +2449,8 @@ CharacterTab:AddSlider({
     end
 })
 
--- ■■■ 新規追加: FOVスライダー ■■■
 CharacterTab:AddSlider({
-    Name = "FOV (視野角)",
+    Name = "FOV",
     Min = 70,
     Max = 120,
     Default = 70,
@@ -2479,7 +2462,6 @@ CharacterTab:AddSlider({
         workspace.CurrentCamera.FieldOfView = Value
     end
 })
--- ■■■■■■■■■■■■■■■■■
 
 ExplosionTab:AddDropdown({
     Name = "トイロード",
@@ -3174,7 +3156,7 @@ end)
 
 OrionLib:MakeNotification({
     Name = "Welcome", 
-    Content = "ようこそ、野獣ハブ Enhanced", 
+    Content = "ようこそ、野獣ハブへ", 
     Image = "rbxassetid://4483345998", 
     Time = 5
 })
