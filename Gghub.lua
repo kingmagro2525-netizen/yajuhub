@@ -2,7 +2,7 @@
 -- URL修正済み: Orion Libraryの読み込み先を修正
 
 -- ▼▼▼ 修正箇所: ライブラリのURLを正しいものに変更しました ▼▼▼
-local OrionLib = loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Orion/main/source'))()
+local OrionLib = loadstring(game:HttpGet(("https://raw.githubusercontent.com/Polinorsik/Orion-Z-Library/refs/heads/main/README.md")))()
 -- ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 local UserInputService = game:GetService("UserInputService")
