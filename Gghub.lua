@@ -1,162 +1,122 @@
--- FTAP完全統合版 v7.1 - デバッグログ強化版
-print("[FTAP Debug] スクリプトの実行を開始しました...")
+-- FTAP完全統合版 v7.1 - デバッグGUI搭載版
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
 
+-- === 1. デバッグGUIの作成 ===
+local debugGui = Instance.new("ScreenGui")
+debugGui.Name = "FTAP_DebugGui"
+debugGui.Parent = CoreGui -- プレイヤーが死んでも消えないようにCoreGuiへ
+
+local mainFrame = Instance.new("ScrollingFrame")
+mainFrame.Size = UDim2.new(0, 300, 0, 400)
+mainFrame.Position = UDim2.new(1, -310, 0, 50)
+mainFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+mainFrame.BackgroundTransparency = 0.3
+mainFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+mainFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+mainFrame.Parent = debugGui
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 2)
+layout.Parent = mainFrame
+
+local function debugLog(text, color)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -10, 0, 20)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = color or Color3.new(1, 1, 1)
+    label.Text = "[" .. os.date("%X") .. "] " .. text
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = mainFrame
+    mainFrame.CanvasPosition = Vector2.new(0, mainFrame.AbsoluteCanvasSize.Y)
+    print("[FTAP Debug] " .. text) -- 念のためコンソールにも
+end
+
+debugLog("スクリプト起動開始...", Color3.new(1, 1, 0))
+
+-- === 2. ライブラリとサービスの読み込み ===
+debugLog("Orion Libraryを読み込み中...")
 local success_orion, OrionLib = pcall(function()
     return loadstring(game:HttpGet("https://raw.githubusercontent.com/Polinorsik/Orion-Z-Library/refs/heads/main/README.md"))()
 end)
 
 if not success_orion or not OrionLib then
-    warn("[FTAP Debug] Orion Libraryの読み込みに失敗しました。URLが変更されているか、通信エラーの可能性があります。")
+    debugLog("エラー: Orion Libraryの読み込みに失敗", Color3.new(1, 0, 0))
     return
-else
-    print("[FTAP Debug] Orion Library の読み込みに成功しました。")
 end
+debugLog("Orion Library 読み込み完了")
 
-print("[FTAP Debug] サービスの取得を開始...")
 local UserInputService = game:GetService("UserInputService")
-local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
 local Lighting = game:GetService("Lighting")
 local HttpService = game:GetService("HttpService")
-print("[FTAP Debug] サービスの取得が完了しました。")
 
--- キャラクター取得（ここで止まる場合があるためタイムアウト付きでログ出力）
-print("[FTAP Debug] キャラクターを待機中...")
-local LocalCharacter = LocalPlayer.Character
-if not LocalCharacter then
-    LocalCharacter = LocalPlayer.CharacterAdded:Wait()
-end
-print("[FTAP Debug] キャラクターを認識しました: " .. LocalCharacter.Name)
+debugLog("サービス取得完了")
 
-LocalPlayer.CharacterAdded:Connect(function(character)
-    LocalCharacter = character
-    print("[FTAP Debug] キャラクターが更新されました。")
-end)
-
--- サーバーリモートの確認
-print("[FTAP Debug] リモートイベントを検索中 (最大10秒待機)...")
-local GrabEvents = ReplicatedStorage:WaitForChild("GrabEvents", 10)
-local MenuToys = ReplicatedStorage:WaitForChild("MenuToys", 10)
-local CharacterEvents = ReplicatedStorage:WaitForChild("CharacterEvents", 10)
+-- リモート待機 (ここで止まることが多いです)
+debugLog("リモートイベントを待機中...")
+local GrabEvents = ReplicatedStorage:WaitForChild("GrabEvents", 5)
+local MenuToys = ReplicatedStorage:WaitForChild("MenuToys", 5)
+local CharacterEvents = ReplicatedStorage:WaitForChild("CharacterEvents", 5)
 
 if not GrabEvents or not MenuToys or not CharacterEvents then
-    warn("[FTAP Debug] 必要なリモートイベントが見つかりません。ゲームがアップデートされた可能性があります。")
+    debugLog("致命的エラー: リモートが見つかりません", Color3.new(1, 0, 0))
     return
 end
-print("[FTAP Debug] 全てのリモートイベントを確認しました。")
+debugLog("リモート接続成功")
 
--- 各種リモートの取得
-local SetNetworkOwner = GrabEvents:WaitForChild("SetNetworkOwner", 5)
-local Struggle = CharacterEvents:WaitForChild("Struggle", 5)
-local CreateGrabLine = GrabEvents:WaitForChild("CreateGrabLine", 5)
-local DestroyGrabLine = GrabEvents:WaitForChild("DestroyGrabLine", 5)
-local DestroyToy = MenuToys:WaitForChild("DestroyToy", 5)
-local RagdollRemote = CharacterEvents:WaitForChild("RagdollRemote", 5)
-local BombEvents = ReplicatedStorage:FindFirstChild("BombEvents")
-print("[FTAP Debug] 個別のファンクション/イベントを取得しました。")
+-- [中略：既存の関数定義部分は元のコードと同じです]
+-- ※お手元のスクリプトの各関数（executeCreatureAntiGrab 等）をここに配置してください
 
-local toysFolder = workspace:FindFirstChild(LocalPlayer.Name.."SpawnedInToys")
-
--- 変数初期化（省略せず既存のものを維持）
-_G.strength = 450
-_G.BlobmanDelay = 0.001
-_G.ToyToLoad = "BombMissile"
-_G.MaxMissiles = 9
-_G.flySpeed = 100
-_G.kickForce = 150
-_G.ufoRotationSpeed = 5
-_G.ufoHeight = 10
-
-local strength = 450
-local auraRadius = 20
-local whiteListEnabled = false
-local espObjects = {}
-local connections = {}
-local anchoredParts = {}
-local compiledGroups = {}
-local bombList = {}
-local ownedToys = {}
-local decoyOffset = 5
-local circleRadius = 10
-local followMode = true
-local crouchWalkSpeed = 50
-local crouchJumpPower = 50
-local infJump = false
-local antiVoidEnabled = false
-local defenseStrength = 25
-local blobDelay = 0.001
-
--- 🆕 新機能用変数
-local antiGrabCreatureEnabled = false
-local antiGrabTestInvisibleEnabled = false
-local antiLagLookEnabled = false
-local lineLagEnabled = false
-local lineLagAllEnabled = false
-local lineLagTarget = nil
-local lineLagSpeed = 0.05
-local invisibleLineEnabled = false
-local randomLineEnabled = false
-local gradientRandomEnabled = false
-local presetSegments = 10
-
--- ターゲット選択用
-local TargetSelected = nil
-local selectedTarget = nil
-
--- Coroutine管理
-local coroutineFlags = {
-    PoisonGrab = false, PoisonAura = false, GrabAura = false, RadiactiveGrab = false, 
-    BurnGrab = false, FireAura = false, LoopFireAura = false, KillGrab = false, 
-    KickGrab = false, UfoGrab = false, NoclipGrab = false, AnchorGrab = false, 
-    AntiGrab = false, LoopKill = false, OrbitPlayer = false, BringAll = false, 
-    CrouchSpeed = false, CrouchJump = false, FireAll = false, RagdollAll = false, 
-    BlobmanAuto = false, HeavenGrab = false, CrazyGrab = false, DeleteAura = false, 
-    ServerBreak = false, AntiGrabCreature = false, AntiGrabTestInvisible = false
-}
-
--- [関数定義部分は元のコードと同じため、中略してUI作成部分へ進みます]
--- (実際の提供時には、お手元のスクリプトの全関数をここに含めてください)
-
-print("[FTAP Debug] UIの構築を開始します...")
-
+-- === 3. UI構築セクション ===
+debugLog("ウィンドウを作成中...")
 local Window = OrionLib:MakeWindow({
-    Name = "FTAP完全統合版 v7.1 [Debug Mode]",
+    Name = "FTAP完全統合版 v7.1 [Debug]",
     HidePremium = false,
     SaveConfig = true,
     ConfigFolder = "FTAPMergedV71",
     IntroEnabled = false
 })
 
--- 攻撃タブ
+debugLog("攻撃タブを作成中...")
 local AttackTab = Window:MakeTab({Name = "⚔️ 攻撃", Icon = "rbxassetid://4483345998"})
-print("[FTAP Debug] 攻撃タブを作成しました。")
+-- (AttackTabの内容...)
+debugLog("攻撃タブ完了")
 
--- [タブ内コンテンツの作成コードをここに配置]
-
--- グラブタブ
+debugLog("グラブタブを作成中...")
 local GrabTab = Window:MakeTab({Name = "🎯 グラブ", Icon = "rbxassetid://4483345998"})
-print("[FTAP Debug] グラブタブを作成しました。")
+-- (GrabTabの内容...)
+debugLog("グラブタブ完了")
 
--- オーラタブ
+debugLog("オーラタブを作成中...")
 local AuraTab = Window:MakeTab({Name = "🔥 オーラ", Icon = "rbxassetid://4483345998"})
-print("[FTAP Debug] オーラタブを作成しました。")
+-- (AuraTabの内容...)
+debugLog("オーラタブ完了")
 
--- 最終初期化
-print("[FTAP Debug] 最終セットアップを実行中...")
+-- ここからが停止している可能性が高い場所です
+debugLog("クリーチャータブ(Blobman)を作成中...")
+local CreatureTab = Window:MakeTab({Name = "👾 クリーチャー", Icon = "rbxassetid://4483345998"})
+-- ここにBlobman系のコードを記述
+debugLog("クリーチャータブ完了")
+
+debugLog("新機能タブ(Line/AntiGrab)を作成中...")
+local NewFeatTab = Window:MakeTab({Name = "🆕 新機能", Icon = "rbxassetid://4483345998"})
+-- ここに新機能のコードを記述
+debugLog("新機能タブ完了")
+
+debugLog("プレイヤー情報タブを作成中...")
+-- (PlayerInfoの内容...)
+debugLog("全タブの作成が終了しました")
+
+-- === 4. 最終初期化 ===
+debugLog("OrionLib:Init() を実行中...")
 OrionLib:Init()
+debugLog("すべてのロードが完了しました！", Color3.new(0, 1, 0))
 
-task.wait(0.5)
-OrionLib:MakeNotification({
-    Name = "🎉 FTAP Debug 起動完了",
-    Content = "コンソール(F9)を確認してください",
-    Image = "rbxassetid://4483345998",
-    Time = 5
-})
-
-print("========================================")
-print("FTAP v7.1 Loaded Successfully!")
-print("もしUIが出ていない場合は、上記ログのどこで止まっているか教えてください。")
-print("========================================")
+-- 5秒後にデバッグGUIを消したい場合は以下を有効化 (任意)
+-- task.wait(10)
+-- debugGui:Destroy()
