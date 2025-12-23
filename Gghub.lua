@@ -1,7 +1,10 @@
--- FTAP完全統合版 v7.1 (全機能搭載 + GUIコンソール追加版)
--- ~ の全コードを含み、GUIログ機能を追加
+-- FTAP完全統合版 v7.1 (修正版)
+-- URL修正済み: Orion Libraryの読み込み先を修正
 
-local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Polinorsik/Orion-Z-Library/refs/heads/main/README.md"))()
+-- ▼▼▼ 修正箇所: ライブラリのURLを正しいものに変更しました ▼▼▼
+local OrionLib = loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Orion/main/source'))()
+-- ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -21,7 +24,9 @@ local function AddLog(text)
     if #LogMessages > 20 then table.remove(LogMessages) end -- 最大20行保持
     
     if LogLabel then
-        LogLabel:Set(table.concat(LogMessages, "\n"))
+        pcall(function()
+            LogLabel:Set(table.concat(LogMessages, "\n"))
+        end)
     end
     print(msg) -- 標準コンソールにも出力
 end
@@ -44,17 +49,27 @@ local CharacterEvents = ReplicatedStorage:WaitForChild("CharacterEvents", 10)
 if not GrabEvents or not MenuToys or not CharacterEvents then
     warn("必要なリモートが見つかりません")
     AddLog("エラー: 必要なリモートが見つかりません")
-    return
+    -- エラーでもUIを表示するためにreturnはしませんが、機能は制限されます
 else
     AddLog("リモートイベントの接続に成功")
 end
 
-local SetNetworkOwner = GrabEvents:WaitForChild("SetNetworkOwner", 5)
-local Struggle = CharacterEvents:WaitForChild("Struggle", 5)
-local CreateGrabLine = GrabEvents:WaitForChild("CreateGrabLine", 5)
-local DestroyGrabLine = GrabEvents:WaitForChild("DestroyGrabLine", 5)
-local DestroyToy = MenuToys:WaitForChild("DestroyToy", 5)
-local RagdollRemote = CharacterEvents:WaitForChild("RagdollRemote", 5)
+-- 各種リモートの取得（存在チェック付き）
+local function getRemote(parent, name)
+    local remote = parent:FindFirstChild(name)
+    if not remote then
+         -- 見つからない場合は待機してみる
+         remote = parent:WaitForChild(name, 5)
+    end
+    return remote
+end
+
+local SetNetworkOwner = getRemote(GrabEvents, "SetNetworkOwner")
+local Struggle = getRemote(CharacterEvents, "Struggle")
+local CreateGrabLine = getRemote(GrabEvents, "CreateGrabLine")
+local DestroyGrabLine = getRemote(GrabEvents, "DestroyGrabLine")
+local DestroyToy = getRemote(MenuToys, "DestroyToy")
+local RagdollRemote = getRemote(CharacterEvents, "RagdollRemote")
 local BombEvents = ReplicatedStorage:FindFirstChild("BombEvents")
 
 local toysFolder = workspace:FindFirstChild(LocalPlayer.Name.."SpawnedInToys")
@@ -171,9 +186,12 @@ end)
 
 -- Owned toys確認
 pcall(function()
-    for i, v in pairs(LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("MenuGui"):WaitForChild("Menu"):WaitForChild("TabContents"):WaitForChild("Toys"):WaitForChild("Contents"):GetChildren()) do
-        if v.Name ~= "UIGridLayout" then
-            ownedToys[v.Name] = true
+    if LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("MenuGui") then
+        local content = LocalPlayer.PlayerGui.MenuGui.Menu.TabContents.Toys.Contents
+        for i, v in pairs(content:GetChildren()) do
+            if v.Name ~= "UIGridLayout" then
+                ownedToys[v.Name] = true
+            end
         end
     end
 end)
@@ -318,11 +336,11 @@ local function executeCreatureAntiGrab()
                         local interval = 0.5 / 120
                         for i = 1, 120 do
                             seat:Sit(humanoid)
-                            RagdollRemote:FireServer(humanoidRootPart, 0)
+                            if RagdollRemote then RagdollRemote:FireServer(humanoidRootPart, 0) end
                             wait(interval)
                         end
                     end
-                    DestroyToy:FireServer(blobman)
+                    if DestroyToy then DestroyToy:FireServer(blobman) end
                 end
                 task.wait(0.1)
                 humanoidRootPart.CFrame = originalPosition
@@ -356,7 +374,7 @@ local function executeTestInvisibleAntiGrab()
                     local interval = 0.5 / 120
                     for i = 1, 120 do
                         foundSeat:Sit(humanoid)
-                        RagdollRemote:FireServer(humanoidRootPart, 0)
+                        if RagdollRemote then RagdollRemote:FireServer(humanoidRootPart, 0) end
                         wait(interval)
                     end
                     camera.CameraType = Enum.CameraType.Custom
@@ -410,7 +428,9 @@ end
 -- 🆕 ライン色更新機能
 local function UpdateLineColors(...)
     pcall(function()
-        ReplicatedStorage.DataEvents.UpdateLineColorsEvent:FireServer(...)
+        if ReplicatedStorage:FindFirstChild("DataEvents") and ReplicatedStorage.DataEvents:FindFirstChild("UpdateLineColorsEvent") then
+            ReplicatedStorage.DataEvents.UpdateLineColorsEvent:FireServer(...)
+        end
     end)
 end
 
@@ -471,10 +491,12 @@ local function CreateLineLag(targetPlayer)
     local character = targetPlayer.Character
     local torso = character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
     if not torso then return end
-    CreateGrabLine:FireServer(
-        torso,
-        CFrame.new(0.031452179, 0.229282379, -0.500015259, 0.15651536, -0.0348511487, -0.987060428, -0.145104796, 0.987721682, -0.0578833297, 0.976958394, 0.152286738, 0.149536535)
-    )
+    if CreateGrabLine then
+        CreateGrabLine:FireServer(
+            torso,
+            CFrame.new(0.031452179, 0.229282379, -0.500015259, 0.15651536, -0.0348511487, -0.987060428, -0.145104796, 0.987721682, -0.0578833297, 0.976958394, 0.152286738, 0.149536535)
+        )
+    end
 end
 
 -- 死亡時の再起動
@@ -1288,7 +1310,7 @@ AuraTab:AddToggle({
                                         local distance = (LocalCharacter.HumanoidRootPart.Position - playerHRP.Position).Magnitude
                                         if distance <= auraRadius then
                                             if not isPlayerWhitelisted(player) then
-                                                SetNetworkOwner:FireServer(playerHRP, playerHRP.CFrame)
+                                                if SetNetworkOwner then SetNetworkOwner:FireServer(playerHRP, playerHRP.CFrame) end
                                             end
                                         end
                                     end
@@ -1397,7 +1419,7 @@ AuraTab:AddToggle({
                                     if hrp and torso then
                                         local distance = (hrp.Position - myPos).Magnitude
                                         if distance <= auraRadius then
-                                            SetNetworkOwner:FireServer(torso, hrp.CFrame)
+                                            if SetNetworkOwner then SetNetworkOwner:FireServer(torso, hrp.CFrame) end
                                             local velocity = torso:FindFirstChild("heavenG") or Instance.new("BodyVelocity")
                                             velocity.Name = "heavenG"
                                             velocity.Parent = torso
@@ -1448,7 +1470,7 @@ AuraTab:AddToggle({
                                     end
                                 end
                                 if firePlayerPart and LocalCharacter:FindFirstChild("Torso") then
-                                    SetNetworkOwner:FireServer(firePlayerPart, firePlayerPart.CFrame)
+                                    if SetNetworkOwner then SetNetworkOwner:FireServer(firePlayerPart, firePlayerPart.CFrame) end
                                     local bodyPosition = Instance.new("BodyPosition")
                                     bodyPosition.P = 20000
                                     bodyPosition.Position = LocalCharacter.Head.Position + Vector3.new(0, 600, 0)
@@ -2149,7 +2171,7 @@ LineTab:AddToggle({
             spawn(function()
                 while invisibleLineEnabled do
                     pcall(function()
-                        CreateGrabLine:FireServer()
+                        if CreateGrabLine then CreateGrabLine:FireServer() end
                     end)
                     wait(0.1)
                 end
@@ -2237,9 +2259,13 @@ VisualTab:AddToggle({
     Default = false,
     Callback = function(enabled)
         if enabled then
-            workspace.CurrentCamera.Blur.Enabled = false
+            if workspace.CurrentCamera:FindFirstChild("Blur") then
+                workspace.CurrentCamera.Blur.Enabled = false
+            end
         else
-            workspace.CurrentCamera.Blur.Enabled = true
+            if workspace.CurrentCamera:FindFirstChild("Blur") then
+                workspace.CurrentCamera.Blur.Enabled = true
+            end
         end
     end
 })
@@ -2343,9 +2369,11 @@ BindTab:AddBind({
                                 if workspace:FindFirstChild("GrabParts") then
                                     burn(targetPlayer.Character:FindFirstChild("Head"))
                                 else
-                                    SetNetworkOwner:FireServer(targetPlayer.Character.HumanoidRootPart, targetPlayer.Character.HumanoidRootPart.CFrame)
-                                    burn(targetPlayer.Character:FindFirstChild("Head"))
-                                    DestroyGrabLine:FireServer(targetPlayer.Character.HumanoidRootPart)
+                                    if SetNetworkOwner then
+                                        SetNetworkOwner:FireServer(targetPlayer.Character.HumanoidRootPart, targetPlayer.Character.HumanoidRootPart.CFrame)
+                                        burn(targetPlayer.Character:FindFirstChild("Head"))
+                                        if DestroyGrabLine then DestroyGrabLine:FireServer(targetPlayer.Character.HumanoidRootPart) end
+                                    end
                                 end
                             end
                         end
@@ -2381,7 +2409,7 @@ BindTab:AddBind({
                             local distance = (LocalCharacter.HumanoidRootPart.Position - target.Position).Magnitude
                             if distance <= 20 then
                                 while targetPlayer.Character.Humanoid.Health ~= 0 do
-                                    SetNetworkOwner:FireServer(targetPlayer.Character.HumanoidRootPart, CFrame.new(targetPlayer.Character.HumanoidRootPart.Position))
+                                    if SetNetworkOwner then SetNetworkOwner:FireServer(targetPlayer.Character.HumanoidRootPart, CFrame.new(targetPlayer.Character.HumanoidRootPart.Position)) end
                                     for _, part in pairs(PoisonHurtParts) do
                                         part.Size = Vector3.new(1.5,1.5,1.5)
                                         part.Transparency = 1
@@ -2415,7 +2443,7 @@ BindTab:AddBind({
                     character = target.Parent.Parent
                 end
                 if character:IsA("Model") and character:FindFirstChildOfClass("Humanoid") then
-                    SetNetworkOwner:FireServer(character.HumanoidRootPart, character.HumanoidRootPart.CFrame)
+                    if SetNetworkOwner then SetNetworkOwner:FireServer(character.HumanoidRootPart, character.HumanoidRootPart.CFrame) end
                     for _, part in ipairs(character:GetDescendants()) do
                         if part:IsA("BasePart") then
                             part.CanCollide = false
