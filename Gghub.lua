@@ -1,3 +1,4 @@
+--アンチグッチ
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -98,6 +99,7 @@ local isSpawningBlobmanForSit = false
 _G.ToyToLoad = "BombMissile"
 _G.MaxMissiles = 9
 _G.BlobmanDelay = 0.05
+_G.AntiGucciBlob = nil -- Added for Anti-Gucci
 
 local decoyOffset = 15
 local stopDistance = 5
@@ -459,7 +461,7 @@ local function noclipGrab()
             
             local weldConstraint = grabPart:FindFirstChild("WeldConstraint")
             if not weldConstraint or not weldConstraint.Part1 then RunService.Heartbeat:Wait(); return end
-             
+        
             local character = weldConstraint.Part1.Parent
             if character and character:FindFirstChild("HumanoidRootPart") then
                 local player = Players:GetPlayerFromCharacter(character)
@@ -645,7 +647,7 @@ local function anchorGrab()
                     child:Destroy()
                 end
             end
-             
+            
             while workspace:FindFirstChild("GrabParts") do
                 RunService.Heartbeat:Wait()
             end
@@ -678,7 +680,7 @@ local function anchorKickGrab()
                     child:Destroy()
                 end
             end
-             
+            
             while workspace:FindFirstChild("GrabParts") do
                 RunService.Heartbeat:Wait()
             end
@@ -730,6 +732,7 @@ local function updateBodyMovers(primaryPart)
                     if bodyGyro then
                         bodyGyro.CFrame = primaryPart.CFrame * data.offset
                     end
+            
                 end
             end
         end
@@ -971,7 +974,7 @@ local function reloadMissile(bool)
                             task.wait(0.2)
                             for _, v in pairs(child:GetChildren()) do
                                 if v:IsA("BasePart") then
-                                     v.Anchored = true
+                                      v.Anchored = true
                                 end
                             end
                             table.insert(bombList, child)
@@ -1691,6 +1694,60 @@ DefenseTab:AddToggle({
             if characterAddedConn then
                 characterAddedConn:Disconnect()
                 characterAddedConn = nil
+            end
+        end
+    end
+})
+
+DefenseTab:AddToggle({
+    Name = "アンチグッチ",
+    Default = false,
+    Save = true,
+    Flag = "AntiGucci",
+    Callback = function(enabled)
+        if enabled then
+            local root = getLocalRoot()
+            if not root then return end
+            local oldPos = root.CFrame
+
+            if not toysFolder:FindFirstChild("CreatureBlobman") then
+                 spawnItemCf("CreatureBlobman", root.CFrame)
+                 task.wait(0.5)
+            end
+
+            local blob = nil
+            for _, v in pairs(toysFolder:GetChildren()) do
+                if v.Name == "CreatureBlobman" and v:FindFirstChild("Head") and v:FindFirstChild("VehicleSeat") then
+                    blob = v
+                    break
+                end
+            end
+
+            if blob then
+                _G.AntiGucciBlob = blob
+                local head = blob.Head
+                head.Anchored = true
+                head.CFrame = CFrame.new(100000, 100000, 100000)
+                
+                task.wait(0.25)
+                local hum = playerCharacter:FindFirstChild("Humanoid")
+                if hum and blob.VehicleSeat then
+                     root.CFrame = blob.VehicleSeat.CFrame + Vector3.new(0, 2, 0)
+                     blob.VehicleSeat:Sit(hum)
+                end
+                
+                task.wait(0.25)
+                if hum then
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+                
+                task.wait(0.25)
+                root.CFrame = oldPos
+            end
+        else
+            if _G.AntiGucciBlob then
+                DestroyT(_G.AntiGucciBlob)
+                _G.AntiGucciBlob = nil
             end
         end
     end
