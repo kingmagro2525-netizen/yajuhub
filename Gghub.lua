@@ -1982,7 +1982,7 @@ BlobmanTab:AddToggle({
 })
 
 BlobmanTab:AddSlider({
-    Name = "テレポート時間(今はもう必要なし)",
+    Name = "テレポート時間",
     Min = 0.0005,
     Max = 1,
     Color = Color3.fromRGB(240, 0, 0),
