@@ -1219,7 +1219,7 @@ local TeleportTab = Window:MakeTab({Name = "テレポート", Icon = "rbxassetid
 local WhitelistTab = Window:MakeTab({Name = "ホワイトリスト", Icon = "rbxassetid://18624604880", PremiumOnly = false}) 
 local ExplosionTab = Window:MakeTab({Name = "爆弾", Icon = "rbxassetid://18624610285", PremiumOnly = false})
 local KeybindsTab = Window:MakeTab({Name = "キービエンス", Icon = "rbxassetid://18624616682", PremiumOnly = false})
-local MiscTab = Window:MakeTab({Name = "Misc", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local MiscTab = Window:MakeTab({Name = "その他", Icon = "rbxassetid://4483345998", PremiumOnly = false})
 local DevTab = Window:MakeTab({Name = "デベロッパーテスト", Icon = "rbxassetid://18624599762", PremiumOnly = false})
 
 local ThrowPower = 400
