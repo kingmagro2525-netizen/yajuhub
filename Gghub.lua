@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
+local Workspace = game:GetService("Workspace")
 
 -- ///// Code 1 Logic: Variables for Anti-Gucci /////
 local AntiGucciEnabled = false
@@ -42,7 +43,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ///// Code 1 Logic: Helper Functions for Anti-Gucci /////
+-- ///// Helper Functions /////
 local function getInv() 
     return workspace:FindFirstChild(localPlayer.Name .. "SpawnedInToys") 
 end
@@ -70,7 +71,7 @@ local function destroyToy_v1(model)
     if model and DestroyToy then DestroyToy:FireServer(model) end
 end
 
-
+-- ///// Variables from Code 2 /////
 local AutoRecoverDroppedPartsCoroutine
 local connectionBombReload
 local reloadBombCoroutine
@@ -128,6 +129,9 @@ local loopTpCoroutine
 local currentLoopTpPlayerIndex = 1
 local blobman
 local isSpawningBlobmanForSit = false 
+
+-- ///// Kick All Logic Variables /////
+local KickAllActive = false
 
 _G.ToyToLoad = "BombMissile"
 _G.MaxMissiles = 9
@@ -274,6 +278,11 @@ end
 local function getLocalRoot()
     if not playerCharacter then return nil end
     return playerCharacter:FindFirstChild("HumanoidRootPart") or playerCharacter:FindFirstChild("Torso")
+end
+
+local function getLocalHum()
+    if not playerCharacter then return nil end
+    return playerCharacter:FindFirstChild("Humanoid")
 end
 
 local followMode = true
@@ -1079,92 +1088,111 @@ local function setupAntiExplosion(character)
     antiExplosionConnection = partOwnerChangedConn
 end
 
-local blobalter = 1
-local function blobGrabPlayerTP(targetPlayer, blobman)
-    if not targetPlayer or targetPlayer == localPlayer or not targetPlayer.Character or not targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
-         return
-    end
-    
-    if isWhitelisted(targetPlayer) then return end
-    
-    local targetHRP = targetPlayer.Character.HumanoidRootPart
-    local playerHRP = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
-    
-    if not playerHRP or not SetNetworkOwner then return end
-    
-    SetNetworkOwner:FireServer(targetHRP, targetHRP.CFrame)
+local function AttemptBarrierDestroy(showFailNotify)
+    local root = getLocalRoot()
+    if not root then return false end
 
-    local targetPos = targetHRP.CFrame
-    
-    playerHRP.CFrame = targetPos * CFrame.new(0, 5, 0)
-    task.wait(_G.BlobmanDelay / 2)
-    
-    local blobmanHRP = blobman.PrimaryPart or blobman:FindFirstChild("Head") or blobman:FindFirstChild("Body")
-    if blobmanHRP then
-        blobmanHRP.CFrame = targetPos * CFrame.new(0, 1, 0)
-    end
-    task.wait(_G.BlobmanDelay / 2)
-    
-    local script = blobman:WaitForChild("BlobmanSeatAndOwnerScript", 0.5)
-    if not script then return end
-    local creatureGrab = script:WaitForChild("CreatureGrab", 0.5)
-    if not creatureGrab then return end
+    local original = root.CFrame
 
-    if blobalter == 1 then
-        local leftDetector = blobman:FindFirstChild("LeftDetector")
-        if leftDetector then
-            targetHRP.CFrame = leftDetector.CFrame * CFrame.new(0, 0, -3)
-            task.wait(0.05)
-            local args = {
-                [1] = leftDetector,
-                [2] = targetHRP,
-                [3] = leftDetector:FindFirstChild("LeftWeld")
-            }
-            creatureGrab:FireServer(unpack(args))
-            blobalter = 2
+    local burger = spawntoy_v1("FoodHamburger", root.CFrame)
+    if burger and burger:FindFirstChild("HoldPart") then
+        burger.HoldPart.HoldItemRemoteFunction:InvokeServer(burger, playerCharacter)
+    end
+
+    task.wait(0.05)
+    root.CFrame = CFrame.new(-521.46, 12.27, -175.27)
+    task.wait(0.05)
+    destroyToy_v1(burger)
+    task.wait(0.05)
+    root.CFrame = original
+
+    for _, plot in ipairs(Workspace.Plots:GetChildren()) do
+        local barrier = plot:FindFirstChild("Barrier")
+        if barrier then
+            for _, p in ipairs(barrier:GetChildren()) do
+                p.CanCollide = false
+            end
         end
-    else
-        local rightDetector = blobman:FindFirstChild("RightDetector")
-        if rightDetector then
-            targetHRP.CFrame = rightDetector.CFrame * CFrame.new(0, 0, -3)
-             task.wait(0.05)
-            local args = {
-                [1] = rightDetector,
-                [2] = targetHRP,
-                [3] = rightDetector:FindFirstChild("RightWeld")
-            }
-            creatureGrab:FireServer(unpack(args))
-             blobalter = 1
+    end
+
+    task.wait(1)
+
+    local ext = spawntoy_v1("FireExtinguisher", root.CFrame)
+    if ext and ext:FindFirstChild("SoundPart") then
+        SetNetworkOwner_v1(ext.SoundPart)
+        task.wait(0.5)
+        ext.SoundPart.CFrame = CFrame.new(-521.46, 12.27, -175.27)
+        task.wait(0.75)
+
+        if ext.Parent then
+            OrionLib:MakeNotification({Name="Success", Content="バリア破壊成功！", Image="rbxassetid://4483345998", Time=3})
+            destroyToy_v1(ext)
+            return true
+        end
+    end
+
+    if showFailNotify then
+        OrionLib:MakeNotification({Name="Failure", Content="バリア破壊失敗", Image="rbxassetid://4483345998", Time=3})
+    end
+    pcall(function() destroyToy_v1(ext) end)
+    return false
+end
+
+-- ///// Helper functions for Kick All Logic /////
+local function getBlobman()
+    local inv = getInv()
+    local v = inv and inv:FindFirstChild("CreatureBlobman", true)
+
+    if not v and Workspace:FindFirstChild("PlotItems") then
+        for _, p in ipairs(Workspace.PlotItems:GetChildren()) do
+            local m = p:FindFirstChild("CreatureBlobman")
+            if m and m:FindFirstChild("PlayerValue") and m.PlayerValue.Value == localPlayer.Name then
+                v = m
+                break
+            end
+        end
+    end
+    return (v and v.ClassName == "Model") and v or nil
+end
+
+local function blobGrab(blob, target, side)
+    local detector = blob:FindFirstChild(side .. "Detector")
+    if detector then
+        local args = {
+            detector,
+            target,
+            detector:FindFirstChild(side .. "Weld")
+        }
+        local script = blob:FindFirstChild("BlobmanSeatAndOwnerScript")
+        if script and script:FindFirstChild("CreatureGrab") then
+            script.CreatureGrab:FireServer(unpack(args))
         end
     end
 end
 
-local function loopTPFunction(blobman)
-    if not blobman then return end
-    while true do
-        local playersToTarget = {}
-        for _, p in pairs(Players:GetPlayers()) do
-            local isHeldValue = p:FindFirstChild("IsHeld")
-            if p ~= localPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and (isHeldValue and isHeldValue.Value == false) and not isWhitelisted(p) then
-                table.insert(playersToTarget, p)
-            end
-        end
-        
-        if #playersToTarget > 0 then
-            local targetPlayer = playersToTarget[currentLoopTpPlayerIndex]
-            if targetPlayer then
-                 blobGrabPlayerTP(targetPlayer, blobman)
-            end
-            
-            currentLoopTpPlayerIndex = currentLoopTpPlayerIndex + 1
-            if currentLoopTpPlayerIndex > #playersToTarget then
-                currentLoopTpPlayerIndex = 1
-            end
-         else
-            task.wait(0.5)
-        end
-        
-        task.wait(_G.BlobmanDelay)
+local function performKickBothHands(blob, targetRoot)
+    local root = getLocalRoot()
+    if not root then return end
+
+    for _, side in ipairs({"Left", "Right"}) do
+        blobGrab(blob, root, side)
+    end
+
+    task.wait(0.1)
+    if SetNetworkOwner then
+        SetNetworkOwner:FireServer(targetRoot, root.CFrame)
+    end
+
+    task.wait()
+    targetRoot.CFrame = targetRoot.CFrame + Vector3.new(0, 16, 0)
+
+    task.wait(0.1)
+    if DestroyLine then
+        DestroyLine:FireServer(targetRoot)
+    end
+
+    for _, side in ipairs({"Left", "Right"}) do
+        blobGrab(blob, targetRoot, side)
     end
 end
 
@@ -1191,6 +1219,7 @@ local TeleportTab = Window:MakeTab({Name = "テレポート", Icon = "rbxassetid
 local WhitelistTab = Window:MakeTab({Name = "ホワイトリスト", Icon = "rbxassetid://18624604880", PremiumOnly = false}) 
 local ExplosionTab = Window:MakeTab({Name = "爆弾", Icon = "rbxassetid://18624610285", PremiumOnly = false})
 local KeybindsTab = Window:MakeTab({Name = "キービエンス", Icon = "rbxassetid://18624616682", PremiumOnly = false})
+local MiscTab = Window:MakeTab({Name = "Misc", Icon = "rbxassetid://4483345998", PremiumOnly = false})
 local DevTab = Window:MakeTab({Name = "デベロッパーテスト", Icon = "rbxassetid://18624599762", PremiumOnly = false})
 
 local ThrowPower = 400
@@ -1375,7 +1404,7 @@ GrabTab:AddToggle({
             ufoGrabCoroutine = coroutine.create(function() grabHandler("radioactive") end)
             coroutine.resume(ufoGrabCoroutine)
         else
-            if ufoGrabCoroutine then
+             if ufoGrabCoroutine then
                 coroutine.close(ufoGrabCoroutine)
                 ufoGrabCoroutine = nil
                 for _, part in pairs(paintPlayerParts) do
@@ -1734,7 +1763,7 @@ DefenseTab:AddToggle({
             end
             if characterAddedConn then
                 characterAddedConn:Disconnect()
-                 characterAddedConn = nil
+                characterAddedConn = nil
             end
         end
     end
@@ -1774,7 +1803,7 @@ DefenseTab:AddToggle({
                     seat:Sit(hum)
                 end
                 
-                 task.wait(0.3)
+                task.wait(0.3)
                 hum:ChangeState(Enum.HumanoidStateType.Jumping)
                 
                 task.wait(0.1)
@@ -1803,7 +1832,7 @@ DefenseTab:AddToggle({
                 while enabled do
                     task.wait(0.02)
                     local character = localPlayer.Character
-                     if character and character:FindFirstChild("Head") then
+                    if character and character:FindFirstChild("Head") then
                         local head = character.Head
                         local partOwner = head:FindFirstChild("PartOwner")
                         if partOwner then
@@ -1812,7 +1841,6 @@ DefenseTab:AddToggle({
                                 if Struggle then Struggle:FireServer() end
                                  local attackerRoot = attacker.Character:FindFirstChild("HumanoidRootPart")
                                 local attackerFirePart = attackerRoot and attackerRoot:FindFirstChild("FirePlayerPart")
-                                
                                  if attackerFirePart then
                                     SetNetworkOwner:FireServer(attackerFirePart, attackerFirePart.CFrame)
                                      task.wait(0.1)
@@ -1863,7 +1891,7 @@ DefenseTab:AddToggle({
                                     if Struggle then Struggle:FireServer() end
                                      local attackerFirePart = attacker.Character.HumanoidRootPart:FindFirstChild("FirePlayerPart")
                                     
-                                    if attackerFirePart then
+                                     if attackerFirePart then
                                          SetNetworkOwner:FireServer(attackerFirePart, attackerFirePart.CFrame)
                                         task.wait(0.1)
                                          if not attackerFirePart:FindFirstChild("BodyVelocity") then
@@ -1902,51 +1930,59 @@ BlobmanTab:AddToggle({
     end
 })
 
-local blobman1
-blobman1 = BlobmanTab:AddToggle({
-    Name = "キックオール(性能が低いため使うことはお勧めしない)",
-    Color = Color3.fromRGB(240, 0, 0),
+BlobmanTab:AddToggle({
+    Name = "キックオール(バグりやすい)",
     Default = false,
-    Callback = function(enabled)
-        if enabled then
-            loopTpCoroutine = coroutine.create(function()
-                local foundBlobman = false
-                for i, v in pairs(game.Workspace:GetDescendants()) do
-                    if v:IsA("Model") and v.Name == "CreatureBlobman" then
-                        if v:FindFirstChild("VehicleSeat") and v.VehicleSeat:FindFirstChild("SeatWeld") and v.VehicleSeat.SeatWeld.Part1.Parent == localPlayer.Character then
-                             blobman = v
-                            foundBlobman = true
-                            break
+    Callback = function(Value)
+        KickAllActive = Value
+        if KickAllActive then
+            task.spawn(function()
+                while KickAllActive do
+                    local blob = getBlobman()
+                    local hum = getLocalHum()
+                    local root = getLocalRoot()
+
+                    if not blob then
+                        OrionLib:MakeNotification({
+                            Name = "Error",
+                            Content = "Blobmanが見つかりません",
+                            Time = 3
+                        })
+                        KickAllActive = false
+                        break
+                    end
+
+                    if hum and not hum.Sit and blob:FindFirstChild("VehicleSeat") then
+                        blob.VehicleSeat:Sit(hum)
+                        task.wait(0.5)
+                    end
+
+                    if root then
+                        local original = root.CFrame
+                        for _, plr in ipairs(Players:GetPlayers()) do
+                            if not KickAllActive then break end
+                            if plr == localPlayer then continue end
+
+                            local char = plr.Character
+                            local tRoot = char and char:FindFirstChild("HumanoidRootPart")
+                            if tRoot then
+                                root.CFrame = tRoot.CFrame
+                                task.wait(0.25)
+                                performKickBothHands(blob, tRoot)
+                                task.wait(0.15)
+                            end
                         end
-                     end
+                        root.CFrame = original
+                    end
+                    task.wait(1)
                 end
-                if not foundBlobman then
-                    OrionLib:MakeNotification({
-                        Name = "Error",
-                         Content = "ブロブマンに乗ってからトグルをオンにしてください", 
-                        Image = "rbxassetid://4483345998", 
-                        Time = 5
-                    })
-                     blobman1:Set(false)
-                    blobman = nil
-                    return
-                end
-                currentLoopTpPlayerIndex = 1
-                 loopTPFunction(blobman)
             end)
-            coroutine.resume(loopTpCoroutine)
-        else
-            if loopTpCoroutine then
-                coroutine.close(loopTpCoroutine)
-                loopTpCoroutine = nil
-                 blobman = nil
-            end
         end
     end
 })
 
 BlobmanTab:AddSlider({
-    Name = "テレポート時間",
+    Name = "テレポート時間(今はもう必要なし)",
     Min = 0.0005,
     Max = 1,
     Color = Color3.fromRGB(240, 0, 0),
@@ -1955,6 +1991,35 @@ BlobmanTab:AddSlider({
     Default = _G.BlobmanDelay,
     Callback = function(value)
         _G.BlobmanDelay = value
+    end
+})
+
+MiscTab:AddLabel("バリア破壊中はあまり動かないでください\n判定が不安定になります")
+
+MiscTab:AddButton({
+    Name = "バリア破壊（1回）",
+    Callback = function()
+        AttemptBarrierDestroy(true)
+    end
+})
+
+local LoopEnabled = false
+MiscTab:AddToggle({
+    Name = "バリア破壊（ループ）",
+    Default = false,
+    Callback = function(v)
+        LoopEnabled = v
+        if v then
+            task.spawn(function()
+                while LoopEnabled do
+                    if AttemptBarrierDestroy(false) then
+                        LoopEnabled = false
+                        break
+                    end
+                    task.wait(1.5)
+                end
+            end)
+        end
     end
 })
 
@@ -2083,7 +2148,7 @@ FunTab:AddButton({
 ScriptTab:AddButton({
     Name = "Infinite Yield",
     Callback = function()
-         loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source",true))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source",true))()
     end
 })
 
@@ -2110,7 +2175,7 @@ AuraTab:AddSlider({
     Color = Color3.fromRGB(240, 0, 0),
     ValueName = ".",
     Increment = 1,
-     Default = auraRadius,
+    Default = auraRadius,
     Callback = function(value)
         auraRadius = value
     end
@@ -2133,9 +2198,9 @@ AuraTab:AddToggle({
                             local humanoidRootPart = character.HumanoidRootPart
 
                             for _, player in pairs(Players:GetPlayers()) do
-                                 coroutine.wrap(function()
+                               coroutine.wrap(function()
                                     if player ~= localPlayer and player.Character and not isWhitelisted(player) then
-                                         local playerCharacter = player.Character
+                                        local playerCharacter = player.Character
                                         local playerTorso = playerCharacter:FindFirstChild("Torso")
                                         if playerTorso then
                                              local distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
@@ -2150,7 +2215,7 @@ AuraTab:AddToggle({
                                             end
                                          end
                                     end
-                                 end)()
+                                end)()
                             end
                         end
                     end)
@@ -2180,7 +2245,7 @@ AuraTab:AddToggle({
                 while enabled do
                     task.wait(0.02)
                     local success, err = pcall(function()
-                         local character = localPlayer.Character
+                        local character = localPlayer.Character
                         if character and character:FindFirstChild("HumanoidRootPart") and SetNetworkOwner then
                             local humanoidRootPart = character.HumanoidRootPart
 
@@ -2189,7 +2254,7 @@ AuraTab:AddToggle({
                                     local playerCharacter = player.Character
                                      local playerTorso = playerCharacter:FindFirstChild("Torso")
                                     if playerTorso then
-                                         local distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
+                                        local distance = (playerTorso.Position - humanoidRootPart.Position).Magnitude
                                         if distance <= auraRadius then
                                             SetNetworkOwner:FireServer(playerTorso, humanoidRootPart.FirePlayerPart.CFrame)
                                              task.wait(0.1)
