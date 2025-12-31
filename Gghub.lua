@@ -132,6 +132,7 @@ local isSpawningBlobmanForSit = false
 
 -- ///// Kick All Logic Variables /////
 local KickAllActive = false
+local TargetKickActive = false
 
 _G.ToyToLoad = "BombMissile"
 _G.MaxMissiles = 9
@@ -157,8 +158,13 @@ local whitelistedPlayers = {}
 local selectedWhitelistPlayerName = ""
 local selectedTeleportPlayerName = ""
 
+-- ///// NEW MULTI-SELECT VARIABLES /////
+local selectedKickTargets = {} -- List to store selected player names
+local targetListLabel = nil    -- Reference to the label
+
 local whitelistDropdown = nil
 local teleportDropdown = nil
+local targetKickDropdown = nil
 local whitelistLabel = nil
 
 local function formatPlayerName(player)
@@ -205,6 +211,16 @@ function updateWhitelistLabel()
      end
 end
 
+-- ///// NEW FUNCTION: Update Target List Label /////
+local function updateTargetKickLabel()
+    if not targetListLabel then return end
+    if #selectedKickTargets == 0 then
+        targetListLabel:Set("現在選択中: なし")
+    else
+        targetListLabel:Set("現在選択中:\n" .. table.concat(selectedKickTargets, ", "))
+    end
+end
+
 local function getPlayerOptions()
     local options = {}
     local pList = Players:GetPlayers()
@@ -228,10 +244,10 @@ local function getPlayerOptions()
 end
 
 function updatePlayerDropdowns()
-    if not teleportDropdown or not whitelistDropdown then return end
     local newOptions = getPlayerOptions()
-    teleportDropdown:Refresh(newOptions, true)
-    whitelistDropdown:Refresh(newOptions, true)
+    if teleportDropdown then teleportDropdown:Refresh(newOptions, true) end
+    if whitelistDropdown then whitelistDropdown:Refresh(newOptions, true) end
+    if targetKickDropdown then targetKickDropdown:Refresh(newOptions, true) end
 end
 
 local Utilities = {}
@@ -1933,6 +1949,104 @@ BlobmanTab:AddToggle({
     end
 })
 
+-- // NEW FUNCTIONALITY START // --
+
+targetKickDropdown = BlobmanTab:AddDropdown({
+    Name = "キックするプレイヤーを選択(2回選択すると選択解除)",
+    Options = getPlayerOptions(),
+    Default = "プレイヤーを選択",
+    Callback = function(formattedName)
+        local name = parsePlayerName(formattedName)
+        if name == "" then return end
+
+        local index = table.find(selectedKickTargets, name)
+        if index then
+            table.remove(selectedKickTargets, index)
+            OrionLib:MakeNotification({Name = "Target Removed", Content = name.."を解除しました", Time = 2})
+        else
+            table.insert(selectedKickTargets, name)
+            OrionLib:MakeNotification({Name = "Target Added", Content = name.."を追加しました", Time = 2})
+        end
+        updateTargetKickLabel()
+    end
+})
+
+targetListLabel = BlobmanTab:AddParagraph("選択中のプレイヤー", "なし")
+
+BlobmanTab:AddToggle({
+    Name = "選択したプレイヤーをキック(性能が悪いため\n　　　　　　　　　　　　　今後アップデート予定)",
+    Default = false,
+    Callback = function(Value)
+        TargetKickActive = Value
+        if TargetKickActive then
+            task.spawn(function()
+                while TargetKickActive do
+                    if #selectedKickTargets == 0 then
+                        task.wait(1)
+                        continue
+                    end
+
+                    local blob = getBlobman()
+                    local hum = getLocalHum()
+                    local root = getLocalRoot()
+
+                    if not blob then
+                        OrionLib:MakeNotification({
+                            Name = "Error",
+                            Content = "ブロブマンが見つかりません (自分のブロブマンをスポーンさせてください)",
+                            Time = 3
+                        })
+                        TargetKickActive = false
+                        break
+                    end
+
+                    -- Seat check logic
+                    if hum then
+                        local currentSeat = hum.SeatPart
+                        if currentSeat then
+                            if not currentSeat:IsDescendantOf(blob) then
+                                hum.Sit = false 
+                                task.wait(0.2)
+                                if blob:FindFirstChild("VehicleSeat") then
+                                    blob.VehicleSeat:Sit(hum)
+                                end
+                            end
+                        elseif blob:FindFirstChild("VehicleSeat") then
+                            blob.VehicleSeat:Sit(hum)
+                        end
+                    end
+                    
+                    task.wait(0.5)
+
+                    if root then
+                        -- Iterate through ALL selected targets
+                        for _, targetName in ipairs(selectedKickTargets) do
+                            if not TargetKickActive then break end
+                            
+                            local targetPlayer = Players:FindFirstChild(targetName)
+                            if targetPlayer and targetPlayer.Character then
+                                local tRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                                if tRoot then
+                                    local original = root.CFrame
+                                    root.CFrame = tRoot.CFrame
+                                    task.wait(0.25)
+                                    performKickBothHands(blob, tRoot)
+                                    task.wait(0.15)
+                                    root.CFrame = original
+                                    task.wait(0.5) -- Small delay between targets
+                                end
+                            end
+                        end
+                    end
+                    task.wait(0.5)
+                end
+            end)
+        end
+    end
+})
+
+-- // NEW FUNCTIONALITY END // --
+
 BlobmanTab:AddToggle({
     Name = "キックオール(バグりやすい)",
     Default = false,
@@ -3322,7 +3436,7 @@ end)
 
 OrionLib:MakeNotification({
     Name = "Welcome", 
-    Content = "ようこそ、野獣ハブ", 
+    Content = "ようこそ、野獣ハブへ", 
     Image = "rbxassetid://4483345998", 
     Time = 5
 })
@@ -3335,6 +3449,12 @@ Players.PlayerRemoving:Connect(function(player)
     if whitelistedPlayers[player.Name] then
         whitelistedPlayers[player.Name] = nil
         updateWhitelistLabel()
+    end
+    -- 解読してくれるなんて、ありがと❤️
+    local idx = table.find(selectedKickTargets, player.Name)
+    if idx then
+        table.remove(selectedKickTargets, idx)
+        updateTargetKickLabel()
     end
     updatePlayerDropdowns()
 end)
