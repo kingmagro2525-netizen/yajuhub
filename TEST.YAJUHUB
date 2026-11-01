@@ -1,3 +1,4 @@
+--難読化ツールのテスト、解析を許可します
 local function lO__l1_O_Il1IIlOOO(l___I_0ll_1lOl)local OlO_OI_IO_0l_0_1_1=5381 local IlOll_Il0OI1l0OO0Ol=2147483647 for lIl_O101lI1IIl1=1,#l___I_0ll_1lOl do OlO_OI_IO_0l_0_1_1=(OlO_OI_IO_0l_0_1_1*33+string.byte(l___I_0ll_1lOl,lIl_O101lI1IIl1))%IlOll_Il0OI1l0OO0Ol end return OlO_OI_IO_0l_0_1_1 end
 local function lO1__l1I1II0O0(O1OI0OO_l_0I_I)local Il__l11_O1_O0I0O_I=2166136261 for lOl_OO_l1_lOOllI10=1,#O1OI0OO_l_0I_I do Il__l11_O1_O0I0O_I=(Il__l11_O1_O0I0O_I*16777619+string.byte(O1OI0OO_l_0I_I,lOl_OO_l1_lOOllI10))%1073741789 end return Il__l11_O1_O0I0O_I end
 local function lI__0_1O1_010Ol(IO0I_l100lOOII)local II01_Il_I_1OO=0 for OIlOIIlOI1I_OO0=1,#IO0I_l100lOOII do II01_Il_I_1OO=(II01_Il_I_1OO*31+string.byte(IO0I_l100lOOII,OIlOIIlOI1I_OO0))%536870909 end return II01_Il_I_1OO end
